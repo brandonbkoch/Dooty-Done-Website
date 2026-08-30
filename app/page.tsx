@@ -79,7 +79,7 @@ const faqs = [
   {
     question: "Is deodorizing included?",
     answer:
-      "Deodorizing is an optional add-on and is not included in the standard scooping price. You can add it to your service whenever you'd like.",
+      "Deodorizing is an optional add-on and is not included in the standard scooping price.",
   },
   {
     question: "How much does deodorizing cost?",
@@ -167,19 +167,18 @@ export default function Home() {
       {/* ==================== HERO ==================== */}
       <section className="relative min-h-[720px] overflow-hidden">
 
-        {/* Full-width backyard photo */}
         <img
           src="/hero-photo.jpg"
           alt="Happy dog enjoying a Colorado Springs backyard"
           className="absolute inset-0 h-full w-full object-cover object-center"
         />
 
-        {/* Cream fade behind text */}
+        {/* Light fade behind left-side text */}
         <div className="absolute inset-0 bg-gradient-to-r from-[#FEFBF7]/94 via-[#FEFBF7]/55 to-transparent" />
 
         <div className="relative mx-auto min-h-[720px] max-w-7xl px-5 sm:px-8">
 
-          {/* LEFT SIDE */}
+          {/* HERO TEXT */}
           <div className="relative z-20 flex min-h-[720px] items-center py-16 sm:py-20 lg:max-w-[59%]">
 
             <div className="max-w-2xl">
@@ -189,15 +188,11 @@ export default function Home() {
               </div>
 
               <h1 className="text-5xl font-black leading-[0.98] tracking-tight text-[#0A1821] sm:text-6xl lg:text-7xl xl:text-8xl">
-
                 We Scoop.
-
                 <br />
-
                 <span className="text-[#678739]">
                   You Relax.
                 </span>
-
               </h1>
 
               {/* Signature underline */}
@@ -208,7 +203,7 @@ export default function Home() {
                 cleaner yard and more time with your dog.
               </p>
 
-              {/* CTA buttons */}
+              {/* CTA Buttons */}
               <div className="mt-9 flex flex-col gap-4 sm:flex-row">
 
                 <a
@@ -216,9 +211,7 @@ export default function Home() {
                   className="inline-flex items-center justify-center gap-3 rounded-full bg-[#678739] px-8 py-4 text-base font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-[#536f2e]"
                 >
                   Get Your Free Quote
-                  <span className="text-xl">
-                    →
-                  </span>
+                  <span className="text-xl">→</span>
                 </a>
 
                 <a
@@ -240,7 +233,7 @@ export default function Home() {
                   </div>
 
                   <div>
-                    <p className="font-black text-[#0A1821]">
+                    <p className="font-black">
                       Locally Owned
                     </p>
 
@@ -259,7 +252,7 @@ export default function Home() {
                   </div>
 
                   <div>
-                    <p className="font-black text-[#0A1821]">
+                    <p className="font-black">
                       Flexible Scheduling
                     </p>
 
@@ -278,7 +271,7 @@ export default function Home() {
                   </div>
 
                   <div>
-                    <p className="font-black text-[#0A1821]">
+                    <p className="font-black">
                       Optional Deodorizing
                     </p>
 
@@ -292,11 +285,10 @@ export default function Home() {
               </div>
 
             </div>
-
           </div>
 
 
-          {/* ==================== UPPER-RIGHT LOGO ==================== */}
+          {/* UPPER RIGHT LOGO */}
           <div className="pointer-events-none absolute right-0 top-0 z-30 hidden h-full w-[500px] lg:block">
 
             <img
@@ -370,7 +362,7 @@ export default function Home() {
         </div>
 
 
-        {/* Scooping pricing */}
+        {/* SCOOPING PRICES */}
         <div
           id="pricing"
           className="mt-12 grid gap-5 sm:grid-cols-2"
@@ -434,7 +426,7 @@ export default function Home() {
         </div>
 
 
-        {/* Cleanup scale */}
+        {/* CLEANUP SCALE */}
         <div className="mt-8 rounded-3xl border border-[#678739]/20 bg-[#F1F5EA] p-6">
 
           <h3 className="text-xl font-black">
@@ -455,7 +447,7 @@ export default function Home() {
         </div>
 
 
-        {/* ==================== OPTIONAL DEODORIZING ==================== */}
+        {/* OPTIONAL DEODORIZING */}
         <div className="mt-8 rounded-3xl border-2 border-[#678739]/20 bg-white p-8 shadow-sm">
 
           <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
@@ -494,6 +486,7 @@ export default function Home() {
 
             <div className="grid w-full gap-3 sm:grid-cols-3 lg:max-w-2xl">
 
+              {/* WEEKLY */}
               <div className="rounded-2xl bg-[#F1F5EA] p-5 text-center">
 
                 <p className="text-sm font-extrabold text-[#536f2e]">
@@ -515,6 +508,7 @@ export default function Home() {
               </div>
 
 
+              {/* BIWEEKLY */}
               <div className="rounded-2xl bg-[#F1F5EA] p-5 text-center">
 
                 <p className="text-sm font-extrabold text-[#536f2e]">
@@ -536,6 +530,7 @@ export default function Home() {
               </div>
 
 
+              {/* ONE TIME */}
               <div className="rounded-2xl bg-[#F1F5EA] p-5 text-center">
 
                 <p className="text-sm font-extrabold text-[#536f2e]">
@@ -559,48 +554,6 @@ export default function Home() {
             </div>
 
           </div>
-
-        </div>
-
-
-        {/* Service features */}
-        <div className="mt-6 grid gap-5 md:grid-cols-2">
-
-          <div className="rounded-3xl border border-[#0A1821]/10 bg-white p-7 shadow-sm">
-
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#678739]/12 text-2xl">
-              ✓
-            </div>
-
-            <h3 className="mt-5 text-2xl font-black">
-              Simple, Flexible Service
-            </h3>
-
-            <p className="mt-3 leading-7 text-[#0A1821]/65">
-              Choose weekly, every-other-week, or twice-weekly scooping with
-              clear pricing and flexible scheduling.
-            </p>
-
-          </div>
-
-
-          <div className="rounded-3xl border border-[#0A1821]/10 bg-white p-7 shadow-sm">
-
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#678739]/12 text-2xl">
-              ✦
-            </div>
-
-            <h3 className="mt-5 text-2xl font-black">
-              Add Deodorizing When You Need It
-            </h3>
-
-            <p className="mt-3 leading-7 text-[#0A1821]/65">
-              Keep your standard scooping service simple, then add odor
-              treatment whenever you'd like an extra-fresh yard.
-            </p>
-
-          </div>
-
         </div>
 
       </section>
@@ -826,36 +779,442 @@ export default function Home() {
       </section>
 
 
-      {/* ==================== FINAL CTA ==================== */}
+      {/* ==================== FINAL QUOTE FORM ==================== */}
       <section
         id="quote"
         className="border-t-4 border-[#678739] bg-[#0A1821] text-white"
       >
 
-        <div className="mx-auto max-w-4xl px-5 py-20 text-center sm:px-8">
+        <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
 
-          <p className="font-extrabold uppercase tracking-[0.18em] text-[#A4C36B]">
-            Ready to Get Started?
-          </p>
+          <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
 
-          <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">
-            Let's get that yard{" "}
-            <span className="text-[#A4C36B]">
-              Dooty Done.
-            </span>
-          </h2>
+            {/* LEFT SIDE */}
+            <div>
 
-          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/75">
-            Request your free quote and take the first step toward a cleaner,
-            better-smelling yard.
-          </p>
+              <p className="font-extrabold uppercase tracking-[0.18em] text-[#A4C36B]">
+                Get Started
+              </p>
 
-          <a
-            href="#quote"
-            className="mt-8 inline-block rounded-full bg-[#678739] px-8 py-4 font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#7A9B48]"
-          >
-            Get My Free Quote
-          </a>
+              <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">
+                Let's get that yard{" "}
+                <span className="text-[#A4C36B]">
+                  Dooty Done.
+                </span>
+              </h2>
+
+              <p className="mt-5 max-w-xl text-lg leading-8 text-white/75">
+                Tell us a little about your yard and your dogs, then choose a
+                convenient time for your free quote visit.
+              </p>
+
+
+              {/* Process */}
+              <div className="mt-8 space-y-5">
+
+                <div className="flex items-start gap-4">
+
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#678739] font-black text-white">
+                    1
+                  </div>
+
+                  <div>
+                    <p className="font-black">
+                      Tell Us About Your Yard
+                    </p>
+
+                    <p className="text-sm leading-6 text-white/60">
+                      A few quick details help us prepare for your visit.
+                    </p>
+                  </div>
+
+                </div>
+
+
+                <div className="flex items-start gap-4">
+
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#678739] font-black text-white">
+                    2
+                  </div>
+
+                  <div>
+                    <p className="font-black">
+                      Choose a Quote Time
+                    </p>
+
+                    <p className="text-sm leading-6 text-white/60">
+                      Pick from the consultation times we make available.
+                    </p>
+                  </div>
+
+                </div>
+
+
+                <div className="flex items-start gap-4">
+
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#678739] font-black text-white">
+                    3
+                  </div>
+
+                  <div>
+                    <p className="font-black">
+                      We'll Handle the Rest
+                    </p>
+
+                    <p className="text-sm leading-6 text-white/60">
+                      We'll evaluate the yard and give you your price.
+                    </p>
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            {/* RIGHT SIDE — FORM */}
+            <div className="rounded-[2rem] bg-[#FEFBF7] p-6 text-[#0A1821] shadow-2xl sm:p-8">
+
+              <div className="mb-7">
+
+                <h3 className="text-2xl font-black">
+                  Request Your Free Quote
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-[#0A1821]/60">
+                  New recurring customers receive their first cleanup free.
+                </p>
+
+              </div>
+
+
+              <form className="space-y-5">
+
+                {/* NAME */}
+                <div>
+
+                  <label
+                    htmlFor="name"
+                    className="mb-2 block text-sm font-extrabold"
+                  >
+                    Name
+                  </label>
+
+                  <input
+                    id="name"
+                    name="name"
+                    type="text"
+                    required
+                    placeholder="Your name"
+                    className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                  />
+
+                </div>
+
+
+                {/* EMAIL */}
+                <div>
+
+                  <label
+                    htmlFor="email"
+                    className="mb-2 block text-sm font-extrabold"
+                  >
+                    Email
+                  </label>
+
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                  />
+
+                </div>
+
+
+                {/* PHONE */}
+                <div>
+
+                  <label
+                    htmlFor="phone"
+                    className="mb-2 block text-sm font-extrabold"
+                  >
+                    Phone
+                  </label>
+
+                  <input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    required
+                    placeholder="(719) 555-1234"
+                    className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                  />
+
+                </div>
+
+
+                {/* ADDRESS */}
+                <div>
+
+                  <label
+                    htmlFor="address"
+                    className="mb-2 block text-sm font-extrabold"
+                  >
+                    Service Address
+                  </label>
+
+                  <input
+                    id="address"
+                    name="address"
+                    type="text"
+                    required
+                    placeholder="Street address, Colorado Springs"
+                    className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                  />
+
+                </div>
+
+
+                {/* DOGS + SERVICE */}
+                <div className="grid gap-5 sm:grid-cols-2">
+
+                  <div>
+
+                    <label
+                      htmlFor="dogs"
+                      className="mb-2 block text-sm font-extrabold"
+                    >
+                      Number of Dogs
+                    </label>
+
+                    <select
+                      id="dogs"
+                      name="dogs"
+                      required
+                      defaultValue=""
+                      className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                    >
+
+                      <option value="" disabled>
+                        Select
+                      </option>
+
+                      <option value="1">
+                        1 dog
+                      </option>
+
+                      <option value="2">
+                        2 dogs
+                      </option>
+
+                      <option value="3">
+                        3 dogs
+                      </option>
+
+                      <option value="4">
+                        4 dogs
+                      </option>
+
+                      <option value="5+">
+                        5+ dogs
+                      </option>
+
+                    </select>
+
+                  </div>
+
+
+                  <div>
+
+                    <label
+                      htmlFor="service"
+                      className="mb-2 block text-sm font-extrabold"
+                    >
+                      Service
+                    </label>
+
+                    <select
+                      id="service"
+                      name="service"
+                      required
+                      defaultValue=""
+                      className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                    >
+
+                      <option value="" disabled>
+                        Select
+                      </option>
+
+                      <option value="weekly">
+                        Weekly
+                      </option>
+
+                      <option value="biweekly">
+                        Every Other Week
+                      </option>
+
+                      <option value="twice-weekly">
+                        Twice Weekly
+                      </option>
+
+                      <option value="one-time">
+                        One-Time Cleanup
+                      </option>
+
+                    </select>
+
+                  </div>
+
+                </div>
+
+
+                {/* CONSULTATION */}
+                <div className="rounded-3xl border border-[#678739]/20 bg-[#F1F5EA] p-5">
+
+                  <div className="mb-5">
+
+                    <p className="text-sm font-extrabold uppercase tracking-[0.15em] text-[#678739]">
+                      Free Quote Visit
+                    </p>
+
+                    <h4 className="mt-1 text-xl font-black">
+                      Choose Your Consultation Time
+                    </h4>
+
+                    <p className="mt-2 text-sm leading-6 text-[#0A1821]/60">
+                      Choose from the dates and times we have available.
+                    </p>
+
+                  </div>
+
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+
+                    <div>
+
+                      <label
+                        htmlFor="consultation-date"
+                        className="mb-2 block text-sm font-extrabold"
+                      >
+                        Date
+                      </label>
+
+                      <input
+                        id="consultation-date"
+                        name="consultation-date"
+                        type="date"
+                        required
+                        className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                      />
+
+                    </div>
+
+
+                    <div>
+
+                      <label
+                        htmlFor="consultation-time"
+                        className="mb-2 block text-sm font-extrabold"
+                      >
+                        Available Time
+                      </label>
+
+                      <select
+                        id="consultation-time"
+                        name="consultation-time"
+                        required
+                        defaultValue=""
+                        className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                      >
+
+                        <option value="" disabled>
+                          Select a time
+                        </option>
+
+                        <option value="9:00 AM">
+                          9:00 AM
+                        </option>
+
+                        <option value="10:00 AM">
+                          10:00 AM
+                        </option>
+
+                        <option value="11:00 AM">
+                          11:00 AM
+                        </option>
+
+                        <option value="1:00 PM">
+                          1:00 PM
+                        </option>
+
+                        <option value="2:00 PM">
+                          2:00 PM
+                        </option>
+
+                        <option value="3:00 PM">
+                          3:00 PM
+                        </option>
+
+                      </select>
+
+                    </div>
+
+                  </div>
+
+
+                  <p className="mt-3 text-xs leading-5 text-[#0A1821]/55">
+                    These are temporary sample times for now. Once we connect
+                    the scheduling backend, this will automatically show only
+                    your actual available appointments.
+                  </p>
+
+                </div>
+
+
+                {/* NOTES */}
+                <div>
+
+                  <label
+                    htmlFor="notes"
+                    className="mb-2 block text-sm font-extrabold"
+                  >
+                    Anything else we should know?
+                  </label>
+
+                  <textarea
+                    id="notes"
+                    name="notes"
+                    rows={4}
+                    placeholder="Gate information, yard details, special instructions, etc."
+                    className="w-full resize-none rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                  />
+
+                </div>
+
+
+                {/* SUBMIT */}
+                <button
+                  type="submit"
+                  className="w-full rounded-full bg-[#678739] px-6 py-4 text-base font-black text-white shadow-lg transition hover:bg-[#536f2e]"
+                >
+                  Request My Free Quote →
+                </button>
+
+
+                <p className="text-center text-xs leading-5 text-[#0A1821]/50">
+                  Your information will be used only to contact you about your
+                  Dooty Done quote and service.
+                </p>
+
+              </form>
+
+            </div>
+
+          </div>
 
         </div>
       </section>
