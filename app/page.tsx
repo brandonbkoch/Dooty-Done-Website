@@ -1,3 +1,7 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { supabase } from "../lib/supabase"
 const services = [
   {
     title: "Weekly",
@@ -99,6 +103,187 @@ const faqs = [
 ];
 
 export default function Home() {
+
+  type AvailabilitySlot = {
+    id: number
+    available_date: string
+    available_time: string
+    appointment_type: string
+    is_available: boolean
+  }
+
+  const [availability, setAvailability] = useState<AvailabilitySlot[]>([])
+  const [loadingAvailability, setLoadingAvailability] = useState(true)
+  const [selectedDate, setSelectedDate] = useState("")
+  const [selectedTime, setSelectedTime] = useState("")
+
+  useEffect(() => {
+    const loadAvailability = async () => {
+      const { data, error } = await supabase
+        .from("availability")
+        .select("id, available_date, available_time, appointment_type, is_available")
+        .eq("appointment_type", "consultation")
+        .eq("is_available", true)
+        .gte("available_date", new Date().toISOString().split("T")[0])
+        .order("available_date", { ascending: true })
+        .order("available_time", { ascending: true })
+
+      if (error) {
+        console.error("Availability error:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        })
+        setAvailability([])
+      } else {
+        setAvailability((data || []) as AvailabilitySlot[])
+      }
+
+      setLoadingAvailability(false)
+    }
+
+    loadAvailability()
+  }, [])
+
+  const formatTime = (time: string) => {
+    const [hours, minutes] = time.split(":").map(Number)
+    const date = new Date()
+    date.setHours(hours, minutes, 0, 0)
+
+    return date.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    })
+  }
+
+  const availableDates = Array.from(
+    new Set(availability.map((slot) => slot.available_date))
+  )
+
+  const timesForSelectedDate = availability.filter(
+    (slot) => slot.available_date === selectedDate
+  )
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const form = event.currentTarget
+    const formData = new FormData(form)
+
+    const name = String(formData.get("name") || "").trim()
+    const email = String(formData.get("email") || "").trim()
+    const phone = String(formData.get("phone") || "").trim()
+    const address = String(formData.get("address") || "").trim()
+    const dogsValue = String(formData.get("dogs") || "").trim()
+    const service = String(formData.get("service") || "").trim()
+    const consultationDate = selectedDate
+    const consultationTime = selectedTime
+    const notes = String(formData.get("notes") || "").trim()
+
+    if (
+      !name ||
+      !email ||
+      !phone ||
+      !address ||
+      !dogsValue ||
+      !service ||
+      !consultationDate ||
+      !consultationTime
+    ) {
+      alert("Please complete all required fields.")
+      return
+    }
+
+    const selectedSlot = availability.find(
+      (slot) =>
+        slot.available_date === consultationDate &&
+        slot.available_time.slice(0, 5) === consultationTime
+    )
+
+    if (!selectedSlot) {
+      alert(
+        "That consultation time is no longer available. Please choose another time."
+      )
+      return
+    }
+
+    const nameParts = name.split(/\s+/)
+    const firstName = nameParts[0]
+    const lastName = nameParts.slice(1).join(" ") || "Customer"
+    const numberOfDogs = dogsValue === "5+" ? 5 : Number(dogsValue)
+
+    if (!Number.isFinite(numberOfDogs) || numberOfDogs < 1) {
+      alert("Please select a valid number of dogs.")
+      return
+    }
+
+    const scheduledAt = new Date(
+      `${consultationDate} ${consultationTime}`
+    ).toISOString()
+
+    const { error } = await supabase.rpc("submit_quote_request", {
+      p_first_name: firstName,
+      p_last_name: lastName,
+      p_phone: phone,
+      p_email: email,
+      p_address: address,
+      p_zip_code: "",
+      p_number_of_dogs: numberOfDogs,
+      p_service: service,
+      p_scheduled_at: scheduledAt,
+      p_notes: notes || null,
+    })
+
+    if (error) {
+      console.error("Quote submission error:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      })
+
+      alert(
+        `There was a problem submitting your request: ${error.message}`
+      )
+      return
+    }
+
+    const notificationResponse = await fetch("/api/send-notification", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        email,
+        phone,
+        address,
+        dogs: dogsValue,
+        service,
+        consultationDate,
+        consultationTime,
+        notes,
+      }),
+    })
+
+    if (!notificationResponse.ok) {
+      const notificationResult = await notificationResponse.json().catch(() => null)
+
+      console.error("Notification error:", notificationResult)
+
+      alert(
+        "Your quote request was booked successfully, but we could not send the business notification email. The appointment is still saved."
+      )
+    } else {
+      alert("Thank you! Your free quote request has been submitted.")
+    }
+
+    form.reset()
+    setSelectedDate("")
+    setSelectedTime("")
+  }
+
   return (
     <main className="min-h-screen bg-[#FEFBF7] text-[#0A1821]">
 
@@ -889,7 +1074,10 @@ export default function Home() {
               </div>
 
 
-              <form className="space-y-5">
+              <form
+  className="space-y-5"
+  onSubmit={handleSubmit}
+>
 
                 {/* NAME */}
                 <div>
@@ -1103,13 +1291,44 @@ export default function Home() {
                         Date
                       </label>
 
-                      <input
+                      <select
                         id="consultation-date"
                         name="consultation-date"
-                        type="date"
                         required
-                        className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
-                      />
+                        value={selectedDate}
+                        onChange={(event) => {
+                          setSelectedDate(event.target.value)
+                          setSelectedTime("")
+                        }}
+                        disabled={loadingAvailability || availableDates.length === 0}
+                        className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <option value="" disabled>
+                          {loadingAvailability
+                            ? "Loading dates..."
+                            : availableDates.length === 0
+                              ? "No dates available"
+                              : "Select a date"}
+                        </option>
+
+                        {availableDates.map((date) => {
+                          const [year, month, day] = date.split("-").map(Number)
+                          const displayDate = new Date(year, month - 1, day).toLocaleDateString(
+                            [],
+                            {
+                              weekday: "short",
+                              month: "long",
+                              day: "numeric",
+                            }
+                          )
+
+                          return (
+                            <option key={date} value={date}>
+                              {displayDate}
+                            </option>
+                          )
+                        })}
+                      </select>
 
                     </div>
 
@@ -1127,38 +1346,27 @@ export default function Home() {
                         id="consultation-time"
                         name="consultation-time"
                         required
-                        defaultValue=""
-                        className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15"
+                        value={selectedTime}
+                        onChange={(event) => setSelectedTime(event.target.value)}
+                        disabled={loadingAvailability || !selectedDate || timesForSelectedDate.length === 0}
+                        className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-
                         <option value="" disabled>
-                          Select a time
+                          {!selectedDate
+                            ? "Choose a date first"
+                            : timesForSelectedDate.length === 0
+                              ? "No times available"
+                              : "Select a time"}
                         </option>
 
-                        <option value="9:00 AM">
-                          9:00 AM
-                        </option>
-
-                        <option value="10:00 AM">
-                          10:00 AM
-                        </option>
-
-                        <option value="11:00 AM">
-                          11:00 AM
-                        </option>
-
-                        <option value="1:00 PM">
-                          1:00 PM
-                        </option>
-
-                        <option value="2:00 PM">
-                          2:00 PM
-                        </option>
-
-                        <option value="3:00 PM">
-                          3:00 PM
-                        </option>
-
+                        {timesForSelectedDate.map((slot) => (
+                          <option
+                            key={slot.id}
+                            value={slot.available_time.slice(0, 5)}
+                          >
+                            {formatTime(slot.available_time)}
+                          </option>
+                        ))}
                       </select>
 
                     </div>
@@ -1167,9 +1375,8 @@ export default function Home() {
 
 
                   <p className="mt-3 text-xs leading-5 text-[#0A1821]/55">
-                    These are temporary sample times for now. Once we connect
-                    the scheduling backend, this will automatically show only
-                    your actual available appointments.
+                    These times are based on Dooty Done's current availability.
+                    Once a consultation is booked, that time is removed from the available slots.
                   </p>
 
                 </div>
