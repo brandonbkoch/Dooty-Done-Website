@@ -5,6 +5,9 @@ const ADMIN_EMAIL = "contact.dootydone@gmail.com"
 
 const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN
 const SQUARE_LOCATION_ID = process.env.SQUARE_LOCATION_ID
+const SQUARE_API_BASE_URL =
+  process.env.SQUARE_API_BASE_URL ||
+  "https://connect.squareupsandbox.com"
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_PUBLISHABLE_KEY =
@@ -326,7 +329,7 @@ export async function POST(request: NextRequest) {
     const idempotencyKey = crypto.randomUUID()
 
     const squareResponse = await fetch(
-      "https://connect.squareupsandbox.com/v2/online-checkout/payment-links",
+      `${SQUARE_API_BASE_URL}/v2/online-checkout/payment-links`,
       {
         method: "POST",
         headers: {

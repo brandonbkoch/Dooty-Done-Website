@@ -3,6 +3,10 @@ import { createClient } from "@supabase/supabase-js"
 
 const ADMIN_EMAIL = "contact.dootydone@gmail.com"
 
+const SQUARE_API_BASE_URL =
+  process.env.SQUARE_API_BASE_URL ||
+  "https://connect.squareupsandbox.com"
+
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get("authorization")
@@ -342,11 +346,11 @@ export async function POST(request: Request) {
     const amountCents = Math.round(agreedPrice * 100)
 
     // ------------------------------------------------------------
-    // Charge Square Sandbox
+    // Charge Square
     // ------------------------------------------------------------
 
     const squareResponse = await fetch(
-      "https://connect.squareupsandbox.com/v2/payments",
+      `${SQUARE_API_BASE_URL}/v2/payments`,
       {
         method: "POST",
         headers: {
@@ -388,7 +392,10 @@ export async function POST(request: Request) {
     const squarePayment = squareResult?.payment
 
     if (!squarePayment?.id) {
-      console.error("Square payment response missing payment ID:", squareResult)
+      console.error(
+        "Square payment response missing payment ID:",
+        squareResult
+      )
 
       return NextResponse.json(
         {

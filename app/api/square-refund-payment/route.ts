@@ -3,6 +3,10 @@ import { createClient } from "@supabase/supabase-js"
 
 const ADMIN_EMAIL = "contact.dootydone@gmail.com"
 
+const SQUARE_API_BASE_URL =
+  process.env.SQUARE_API_BASE_URL ||
+  "https://connect.squareupsandbox.com"
+
 export async function POST(request: Request) {
   try {
     // ------------------------------------------------------------
@@ -290,11 +294,11 @@ export async function POST(request: Request) {
     }
 
     // ------------------------------------------------------------
-    // SEND REFUND TO SQUARE SANDBOX
+    // SEND REFUND TO SQUARE
     // ------------------------------------------------------------
 
     const squareResponse = await fetch(
-      "https://connect.squareupsandbox.com/v2/refunds",
+      `${SQUARE_API_BASE_URL}/v2/refunds`,
       {
         method: "POST",
         headers: {
