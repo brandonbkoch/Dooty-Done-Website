@@ -213,9 +213,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // ------------------------------------------------------------
+    // Customer is REQUIRED for every payment link
+    // ------------------------------------------------------------
+
+    if (customerId === null) {
+      return NextResponse.json(
+        {
+          error:
+            "Please select a customer before creating a payment link.",
+        },
+        { status: 400 }
+      )
+    }
+
     if (
-      customerId !== null &&
-      (!Number.isInteger(customerId) || customerId <= 0)
+      !Number.isInteger(customerId) ||
+      customerId <= 0
     ) {
       return NextResponse.json(
         {
@@ -268,43 +282,41 @@ export async function POST(request: NextRequest) {
     }
 
     // ------------------------------------------------------------
-    // Verify customer exists when supplied
+    // Verify customer exists
     // ------------------------------------------------------------
 
-    if (customerId !== null) {
-      const {
-        data: customer,
-        error: customerError,
-      } = await adminClient
-        .from("customers")
-        .select("id")
-        .eq("id", customerId)
-        .maybeSingle()
+    const {
+      data: customer,
+      error: customerError,
+    } = await adminClient
+      .from("customers")
+      .select("id")
+      .eq("id", customerId)
+      .maybeSingle()
 
-      if (customerError) {
-        console.error(
-          "Payment link customer lookup error:",
-          customerError
-        )
+    if (customerError) {
+      console.error(
+        "Payment link customer lookup error:",
+        customerError
+      )
 
-        return NextResponse.json(
-          {
-            error:
-              "We couldn't verify the selected customer.",
-          },
-          { status: 500 }
-        )
-      }
+      return NextResponse.json(
+        {
+          error:
+            "We couldn't verify the selected customer.",
+        },
+        { status: 500 }
+      )
+    }
 
-      if (!customer) {
-        return NextResponse.json(
-          {
-            error:
-              "The selected customer could not be found.",
-          },
-          { status: 400 }
-        )
-      }
+    if (!customer) {
+      return NextResponse.json(
+        {
+          error:
+            "The selected customer could not be found.",
+        },
+        { status: 400 }
+      )
     }
 
     // ------------------------------------------------------------
@@ -328,14 +340,17 @@ export async function POST(request: NextRequest) {
 
           quick_pay: {
             name,
+
             price_money: {
               amount: Math.round(amount * 100),
               currency: "USD",
             },
+
             location_id: SQUARE_LOCATION_ID,
           },
 
-          description: description || undefined,
+          description:
+            description || undefined,
 
           payment_note:
             paymentNote || undefined,
@@ -399,18 +414,29 @@ export async function POST(request: NextRequest) {
       customer_service_id: customerServiceId,
       appointment_id: appointmentId,
       job_id: jobId,
+
       amount,
+
       name,
-      description: description || null,
-      payment_note: paymentNote || null,
+
+      description:
+        description || null,
+
+      payment_note:
+        paymentNote || null,
+
       square_payment_link_id:
         squarePaymentLink.id,
+
       square_order_id:
         squarePaymentLink.order_id || null,
+
       square_url:
         squarePaymentLink.url || null,
+
       square_long_url:
         squarePaymentLink.long_url || null,
+
       status: "created",
     }
 
@@ -435,8 +461,10 @@ export async function POST(request: NextRequest) {
         {
           error:
             "Square created the payment link, but Dooty Done could not save the payment-link record.",
+
           squarePaymentLinkId:
             squarePaymentLink.id,
+
           squareOrderId:
             squarePaymentLink.order_id || null,
         },
@@ -454,20 +482,28 @@ export async function POST(request: NextRequest) {
       paymentLink: {
         id:
           savedPaymentLink.id,
+
         url:
           savedPaymentLink.square_url,
+
         longUrl:
           savedPaymentLink.square_long_url,
+
         orderId:
           savedPaymentLink.square_order_id,
+
         amount:
           Number(savedPaymentLink.amount),
+
         name:
           savedPaymentLink.name,
+
         description:
           savedPaymentLink.description || "",
+
         customerId:
           savedPaymentLink.customer_id,
+
         createdAt:
           savedPaymentLink.created_at,
       },

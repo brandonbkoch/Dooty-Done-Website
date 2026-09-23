@@ -2,29 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY!;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 const SQUARE_WEBHOOK_SIGNATURE_KEY =
-  process.env.SQUARE_WEBHOOK_SIGNATURE_KEY!;
+  process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
 
 const SQUARE_WEBHOOK_NOTIFICATION_URL =
-  process.env.SQUARE_WEBHOOK_NOTIFICATION_URL!;
-
-// This client is ONLY used by the Square webhook.
-// It runs server-side and uses the Supabase secret key
-// so it can bypass RLS safely.
-const supabaseAdmin = createClient(
-  SUPABASE_URL,
-  SUPABASE_SECRET_KEY,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  }
-);
+  process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json(
@@ -48,8 +33,7 @@ function verifySquareSignature(
   }
 
   const payload =
-    SQUARE_WEBHOOK_NOTIFICATION_URL +
-    rawBody;
+    SQUARE_WEBHOOK_NOTIFICATION_URL + rawBody;
 
   const expectedSignature = crypto
     .createHmac(
@@ -117,6 +101,25 @@ export async function POST(
         500
       );
     }
+
+    // ---------------------------------------------------------
+    // Create Supabase admin client ONLY when the webhook runs.
+    //
+    // This prevents Next.js build-time evaluation from trying
+    // to initialize Supabase without the local secret key.
+    // ---------------------------------------------------------
+
+    const supabaseAdmin = createClient(
+      SUPABASE_URL,
+      SUPABASE_SECRET_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false,
+        },
+      }
+    );
 
     // ---------------------------------------------------------
     // 2. Read raw request body
