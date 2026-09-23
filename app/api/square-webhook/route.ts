@@ -3,19 +3,27 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_PUBLISHABLE_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY!;
 
-const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN!;
 const SQUARE_WEBHOOK_SIGNATURE_KEY =
   process.env.SQUARE_WEBHOOK_SIGNATURE_KEY!;
 
 const SQUARE_WEBHOOK_NOTIFICATION_URL =
   process.env.SQUARE_WEBHOOK_NOTIFICATION_URL!;
 
-const supabase = createClient(
+// This client is ONLY used by the Square webhook.
+// It runs server-side and uses the Supabase secret key
+// so it can bypass RLS safely.
+const supabaseAdmin = createClient(
   SUPABASE_URL,
-  SUPABASE_PUBLISHABLE_KEY
+  SUPABASE_SECRET_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  }
 );
 
 function jsonError(message: string, status = 400) {
@@ -51,7 +59,11 @@ function verifySquareSignature(
     .update(payload)
     .digest("base64");
 
-  const receivedBuffer = Buffer.from(signature, "utf8");
+  const receivedBuffer = Buffer.from(
+    signature,
+    "utf8"
+  );
+
   const expectedBuffer = Buffer.from(
     expectedSignature,
     "utf8"
@@ -70,20 +82,56 @@ function verifySquareSignature(
   );
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   try {
     // ---------------------------------------------------------
-    // 1. Read the raw request body
+    // 1. Verify required environment variables
+    // ---------------------------------------------------------
+
+    if (
+      !SUPABASE_URL ||
+      !SUPABASE_SECRET_KEY
+    ) {
+      console.error(
+        "Missing Supabase server environment variables."
+      );
+
+      return jsonError(
+        "Webhook server configuration is incomplete.",
+        500
+      );
+    }
+
+    if (
+      !SQUARE_WEBHOOK_SIGNATURE_KEY ||
+      !SQUARE_WEBHOOK_NOTIFICATION_URL
+    ) {
+      console.error(
+        "Missing Square webhook environment variables."
+      );
+
+      return jsonError(
+        "Square webhook configuration is incomplete.",
+        500
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 2. Read raw request body
     // ---------------------------------------------------------
 
     const rawBody = await request.text();
 
     if (!rawBody) {
-      return jsonError("Empty webhook body.");
+      return jsonError(
+        "Empty webhook body."
+      );
     }
 
     // ---------------------------------------------------------
-    // 2. Verify that the request came from Square
+    // 3. Verify Square signature
     // ---------------------------------------------------------
 
     const signature = request.headers.get(
@@ -119,7 +167,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 3. Parse the Square event
+    // 4. Parse Square event
     // ---------------------------------------------------------
 
     let event: any;
@@ -139,7 +187,7 @@ export async function POST(request: NextRequest) {
     );
 
     // ---------------------------------------------------------
-    // 4. Ignore events we don't need
+    // 5. Ignore events we don't need
     // ---------------------------------------------------------
 
     if (
@@ -149,12 +197,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         ignored: true,
-        eventType: event?.type || null,
+        eventType:
+          event?.type || null,
       });
     }
 
     // ---------------------------------------------------------
-    // 5. Get the Payment object
+    // 6. Get Payment object
     // ---------------------------------------------------------
 
     const payment =
@@ -172,33 +221,36 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const squarePaymentId = payment.id;
+    const squarePaymentId =
+      payment.id;
 
     // ---------------------------------------------------------
-    // 6. We only create a Dooty Done payment when Square
-    //    says the payment is completed.
+    // 7. Only process completed payments
     // ---------------------------------------------------------
 
-    if (payment.status !== "COMPLETED") {
+    if (
+      payment.status !== "COMPLETED"
+    ) {
       console.log(
-        `Square payment ${squarePaymentId} is ${payment.status}; no Dooty Done payment created yet.`
+        `Square payment ${squarePaymentId} is ${payment.status}; waiting for completion.`
       );
 
       return NextResponse.json({
         success: true,
         ignored: true,
-        paymentStatus: payment.status,
+        paymentStatus:
+          payment.status,
       });
     }
 
     // ---------------------------------------------------------
-    // 7. Check whether this payment is already recorded
+    // 8. Prevent duplicate payment records
     // ---------------------------------------------------------
 
     const {
       data: existingPayment,
       error: existingPaymentError,
-    } = await supabase
+    } = await supabaseAdmin
       .from("payments")
       .select("id, status")
       .eq(
@@ -227,13 +279,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         alreadyRecorded: true,
-        paymentId: existingPayment.id,
+        paymentId:
+          existingPayment.id,
       });
     }
 
     // ---------------------------------------------------------
-    // 8. Find the Dooty Done payment link using the Square
-    //    order ID
+    // 9. Get Square order ID
     // ---------------------------------------------------------
 
     const squareOrderId =
@@ -250,10 +302,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ---------------------------------------------------------
+    // 10. Find matching Dooty Done payment link
+    // ---------------------------------------------------------
+
     const {
       data: paymentLink,
       error: paymentLinkError,
-    } = await supabase
+    } = await supabaseAdmin
       .from("payment_links")
       .select(
         `
@@ -301,7 +357,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 9. Determine the actual amount Square processed
+    // 11. Get actual Square payment amount
     // ---------------------------------------------------------
 
     const amountCents =
@@ -320,7 +376,10 @@ export async function POST(request: NextRequest) {
     const amount =
       Number(amountCents) / 100;
 
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
       return jsonError(
         "Square payment amount is invalid.",
         400
@@ -328,7 +387,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 10. Create the Dooty Done payment record
+    // 12. Create Dooty Done payment record
     // ---------------------------------------------------------
 
     const paymentNotes = [
@@ -343,46 +402,59 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: insertedPayment, error: insertError } =
-      await supabase
-        .from("payments")
-        .insert({
-          customer_id:
-            paymentLink.customer_id,
+    const {
+      data: insertedPayment,
+      error: insertError,
+    } = await supabaseAdmin
+      .from("payments")
+      .insert({
+        customer_id:
+          paymentLink.customer_id,
 
-          customer_service_id:
-            paymentLink.customer_service_id,
+        customer_service_id:
+          paymentLink.customer_service_id,
 
-          appointment_id:
-            paymentLink.appointment_id,
+        appointment_id:
+          paymentLink.appointment_id,
 
-          amount,
+        amount,
 
-          status: "paid",
+        status: "paid",
 
-          payment_method:
-            "square_payment_link",
+        payment_method:
+          "square_payment_link",
 
-          paid_at:
-            payment.completed_at ||
-            new Date().toISOString(),
+        paid_at:
+          payment.completed_at ||
+          new Date().toISOString(),
 
-          square_payment_id:
-            squarePaymentId,
+        square_payment_id:
+          squarePaymentId,
 
-          receipt_url:
-            payment.receipt_url || null,
+        receipt_url:
+          payment.receipt_url ||
+          null,
 
-          job_id:
-            paymentLink.job_id,
+        job_id:
+          paymentLink.job_id,
 
-          notes:
-            paymentNotes.join(" | "),
-        })
-        .select(
-          "id, customer_id, amount, status, payment_method, square_payment_id, job_id"
-        )
-        .single();
+        notes:
+          paymentNotes.join(
+            " | "
+          ),
+      })
+      .select(
+        `
+        id,
+        customer_id,
+        amount,
+        status,
+        payment_method,
+        square_payment_id,
+        job_id
+        `
+      )
+      .single();
 
     if (insertError) {
       console.error(
@@ -397,26 +469,30 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 11. Mark the payment link as paid
+    // 13. Mark payment link as paid
     // ---------------------------------------------------------
 
-    const { error: updateLinkError } =
-      await supabase
-        .from("payment_links")
-        .update({
-          status: "paid",
-          square_payment_id:
-            squarePaymentId,
-          paid_at:
-            payment.completed_at ||
-            new Date().toISOString(),
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq(
-          "id",
-          paymentLink.id
-        );
+    const {
+      error: updateLinkError,
+    } = await supabaseAdmin
+      .from("payment_links")
+      .update({
+        status: "paid",
+
+        square_payment_id:
+          squarePaymentId,
+
+        paid_at:
+          payment.completed_at ||
+          new Date().toISOString(),
+
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "id",
+        paymentLink.id
+      );
 
     if (updateLinkError) {
       console.error(
@@ -424,8 +500,6 @@ export async function POST(request: NextRequest) {
         updateLinkError
       );
 
-      // The payment itself was successfully recorded.
-      // Return success while exposing the secondary update issue.
       return NextResponse.json({
         success: true,
         paymentRecorded: true,
@@ -438,7 +512,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 12. Everything succeeded
+    // 14. Success
     // ---------------------------------------------------------
 
     console.log(
@@ -450,7 +524,8 @@ export async function POST(request: NextRequest) {
 
       paymentRecorded: true,
 
-      payment: insertedPayment,
+      payment:
+        insertedPayment,
 
       paymentLink: {
         id: paymentLink.id,
