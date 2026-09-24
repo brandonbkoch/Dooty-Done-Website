@@ -88,7 +88,7 @@ const faqs = [
   {
     question: "How much does deodorizing cost?",
     answer:
-      "Weekly deodorizing is $15 per visit, bi-weekly deodorizing is $20 per visit, and one-time or spring deodorizing cleanups are $35â€“$45.",
+      "Weekly deodorizing is $15 per visit, bi-weekly deodorizing is $20 per visit, and one-time or spring deodorizing cleanups are $35–$45.",
   },
   {
     question: "How does scheduling work?",
@@ -330,7 +330,7 @@ export default function Home() {
             </a>
 
             <a
-              href="#contact"
+              href="#quote"
               className="transition hover:text-[#678739]"
             >
               Contact
@@ -396,7 +396,7 @@ export default function Home() {
                   className="inline-flex items-center justify-center gap-3 rounded-full bg-[#678739] px-8 py-4 text-base font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-[#536f2e]"
                 >
                   Get Your Free Quote
-                  <span className="text-xl">â†’</span>
+                  <span className="text-xl">→</span>
                 </a>
 
                 <a
@@ -414,7 +414,7 @@ export default function Home() {
                 <div className="flex items-start gap-3">
 
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#678739] font-black text-white shadow-md">
-                    âœ“
+                    ✓
                   </div>
 
                   <div>
@@ -433,7 +433,7 @@ export default function Home() {
                 <div className="flex items-start gap-3">
 
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#678739] font-black text-white shadow-md">
-                    âœ“
+                    ✓
                   </div>
 
                   <div>
@@ -452,7 +452,7 @@ export default function Home() {
                 <div className="flex items-start gap-3">
 
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#678739] font-black text-white shadow-md">
-                    âœ¦
+                    ✦
                   </div>
 
                   <div>
@@ -494,7 +494,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl flex-col items-center gap-6 px-5 py-10 text-center sm:px-8 md:flex-row md:justify-center md:text-left">
 
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#678739] text-3xl font-black shadow-lg">
-            âœ“
+            ✓
           </div>
 
           <div>
@@ -623,7 +623,7 @@ export default function Home() {
             service frequency. We don't normally charge based on yard size.
             For unusually accumulated waste, we use a simple cleanup scale:
             <strong className="text-[#0A1821]">
-              {" "}Light â†’ Medium â†’ Heavy â†’ Extreme.
+              {" "}Light → Medium → Heavy → Extreme.
             </strong>
             {" "}If your yard needs additional cleanup beyond our standard
             service, we'll let you know the price before we begin.
@@ -642,7 +642,7 @@ export default function Home() {
               <div className="flex items-center gap-3">
 
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#678739] text-2xl text-white">
-                  âœ¦
+                  ✦
                 </div>
 
                 <div>
@@ -723,7 +723,7 @@ export default function Home() {
                 </p>
 
                 <p className="mt-2 text-3xl font-black text-[#678739]">
-                  $35â€“$45
+                  $35–$45
                 </p>
 
                 <p className="mt-1 text-xs font-semibold text-[#0A1821]/60">
@@ -1058,7 +1058,7 @@ export default function Home() {
             </div>
 
 
-            {/* RIGHT SIDE â€” FORM */}
+            {/* RIGHT SIDE — FORM */}
             <div className="rounded-[2rem] bg-[#FEFBF7] p-6 text-[#0A1821] shadow-2xl sm:p-8">
 
               <div className="mb-7">
@@ -1408,7 +1408,7 @@ export default function Home() {
                   type="submit"
                   className="w-full rounded-full bg-[#678739] px-6 py-4 text-base font-black text-white shadow-lg transition hover:bg-[#536f2e]"
                 >
-                  Request My Free Quote â†’
+                  Request My Free Quote →
                 </button>
 
 
@@ -1427,78 +1427,75 @@ export default function Home() {
       </section>
 
 
-
       {/* ==================== CONTACT ==================== */}
       <section
         id="contact"
-        className="border-t border-[#678739]/15 bg-[#EAF0E2]"
+        className="border-t border-[#678739]/15 bg-white py-16 sm:py-20"
       >
-        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8">
+
           <div className="mx-auto max-w-3xl text-center">
-            <p className="font-extrabold uppercase tracking-[0.18em] text-[#678739]">
-              Contact Dooty Done
+
+            <p className="mb-3 text-sm font-black uppercase tracking-[0.2em] text-[#678739]">
+              Need to Reach Us?
             </p>
 
-            <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">
-              Have a question? We're here to help.
+            <h2 className="text-3xl font-black tracking-tight text-[#0A1821] sm:text-4xl">
+              Let’s get your yard back to fresh.
             </h2>
 
-            <p className="mx-auto mt-4 max-w-2xl text-lg leading-8 text-[#0A1821]/65">
-              Give us a call or send us an email. We'd be happy to answer
-              your questions or help you get started.
+            <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-[#0A1821]/65">
+              Have a question about service, scheduling, or your free cleanup?
+              Give us a call or send us an email. We’re happy to help.
             </p>
 
-            <div className="mt-9 grid gap-5 sm:grid-cols-2">
+            <div className="mt-8 grid gap-4 sm:grid-cols-2">
+
               <a
                 href="tel:+17194258838"
-                className="group rounded-3xl border border-[#678739]/20 bg-white p-7 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+                className="group rounded-3xl border border-[#678739]/15 bg-[#FEFBF7] p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#678739]/30 hover:shadow-md"
               >
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#678739] text-2xl text-white">
-                  ☎
-                </div>
-
-                <p className="mt-4 text-sm font-extrabold uppercase tracking-[0.15em] text-[#678739]">
-                  Call Us
+                <p className="text-sm font-black uppercase tracking-wide text-[#678739]">
+                  Call or Text
                 </p>
 
-                <p className="mt-2 text-2xl font-black text-[#0A1821]">
+                <p className="mt-2 text-xl font-black text-[#0A1821]">
                   (719) 425-8838
                 </p>
 
-                <p className="mt-2 text-sm text-[#0A1821]/55">
-                  Tap to call Dooty Done
+                <p className="mt-2 text-sm font-semibold text-[#0A1821]/55">
+                  We’ll get back to you as soon as we can.
                 </p>
               </a>
 
               <a
                 href="mailto:contact.dootydone@gmail.com"
-                className="group rounded-3xl border border-[#678739]/20 bg-white p-7 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+                className="group rounded-3xl border border-[#678739]/15 bg-[#FEFBF7] p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#678739]/30 hover:shadow-md"
               >
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#678739] text-2xl text-white">
-                  ✉
-                </div>
-
-                <p className="mt-4 text-sm font-extrabold uppercase tracking-[0.15em] text-[#678739]">
-                  Email Us
+                <p className="text-sm font-black uppercase tracking-wide text-[#678739]">
+                  Email
                 </p>
 
-                <p className="mt-2 break-all text-xl font-black text-[#0A1821] sm:text-2xl">
+                <p className="mt-2 break-all text-lg font-black text-[#0A1821] sm:text-xl">
                   contact.dootydone@gmail.com
                 </p>
 
-                <p className="mt-2 text-sm text-[#0A1821]/55">
-                  Tap to send us an email
+                <p className="mt-2 text-sm font-semibold text-[#0A1821]/55">
+                  Send us the details and we’ll be in touch.
                 </p>
               </a>
+
             </div>
 
             <a
               href="#quote"
-              className="mt-8 inline-flex items-center justify-center rounded-full bg-[#678739] px-8 py-4 text-base font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#536f2e]"
+              className="mt-8 inline-flex rounded-full bg-[#678739] px-7 py-3.5 text-sm font-black text-white shadow-lg transition hover:bg-[#536f2e]"
             >
-              Get a Free Quote
+              Get a Free Quote →
             </a>
+
           </div>
+
         </div>
       </section>
 
@@ -1508,7 +1505,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-8 text-sm text-[#0A1821]/60 sm:px-8 md:flex-row md:items-center md:justify-between">
 
           <p>
-            Â© {new Date().getFullYear()} Dooty Done LLC. All rights reserved.
+            © {new Date().getFullYear()} Dooty Done LLC. All rights reserved.
           </p>
 
           <p className="font-semibold">
@@ -1520,4 +1517,4 @@ export default function Home() {
 
     </main>
   );
-}
+}  
