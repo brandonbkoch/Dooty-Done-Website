@@ -106,6 +106,10 @@ export default function AdminDashboard() {
   const [services, setServices] = useState<Service[]>([])
   const [customerServices, setCustomerServices] = useState<CustomerService[]>([])
   const [errorMessage, setErrorMessage] = useState("")
+  const [consultationBusyId, setConsultationBusyId] = useState<number | null>(null)
+  const [consultationMessage, setConsultationMessage] = useState(
+    ""
+  )
 
   const [newDate, setNewDate] = useState("")
   const [newTime, setNewTime] = useState("")
@@ -1341,6 +1345,163 @@ export default function AdminDashboard() {
     }
   }
 
+  const sendCustomerConsultationNotification = async (
+    appointmentId: number,
+    notificationType: "start_trip" | "arrived" | "completed"
+  ) => {
+    try {
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession()
+
+      if (sessionError || !sessionData.session?.access_token) {
+        console.error("Consultation notification session error:", sessionError)
+        return false
+      }
+
+      const response = await fetch("/api/send-appointment-notification", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({
+          appointmentId,
+          notificationType,
+        }),
+      })
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => null)
+        console.error("Consultation notification error:", result)
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error("Consultation notification unexpected error:", error)
+      return false
+    }
+  }
+
+  const updateAppointmentStatus = async (
+    appointment: Appointment,
+    status: "on_the_way" | "arrived" | "completed"
+  ) => {
+    setConsultationBusyId(appointment.id)
+    setConsultationMessage("")
+    setErrorMessage("")
+
+    const { error } = await supabase
+      .from("appointments")
+      .update({ status })
+      .eq("id", appointment.id)
+
+    if (error) {
+      console.error("Update consultation status error:", error)
+      setErrorMessage("We couldn't update this consultation. Please try again.")
+      setConsultationBusyId(null)
+      return false
+    }
+
+    // Update only this appointment in local state instead of reloading the
+    // entire dashboard. This keeps the admin's current scroll position intact.
+    setAppointments((currentAppointments) =>
+      currentAppointments.map((currentAppointment) =>
+        currentAppointment.id === appointment.id
+          ? { ...currentAppointment, status }
+          : currentAppointment
+      )
+    )
+
+    return true
+  }
+
+  const finishConsultationAction = (
+    appointmentId: number,
+    message: string
+  ) => {
+    setConsultationMessage(message)
+    setConsultationBusyId(null)
+
+    window.setTimeout(() => {
+      setConsultationMessage((currentMessage) =>
+        currentMessage === message ? "" : currentMessage
+      )
+    }, 5000)
+  }
+
+  const handleConsultationStartTrip = async (appointment: Appointment) => {
+    const updated = await updateAppointmentStatus(appointment, "on_the_way")
+
+    if (!updated) return
+
+    const notificationSent = await sendCustomerConsultationNotification(
+      appointment.id,
+      "start_trip"
+    )
+
+    if (!notificationSent) {
+      finishConsultationAction(
+        appointment.id,
+        "On the way status saved, but the customer notification email could not be sent."
+      )
+      return
+    }
+
+    finishConsultationAction(
+      appointment.id,
+      "✓ Customer notified — Dooty Done is on the way."
+    )
+  }
+
+  const handleConsultationArrive = async (appointment: Appointment) => {
+    const updated = await updateAppointmentStatus(appointment, "arrived")
+
+    if (!updated) return
+
+    const notificationSent = await sendCustomerConsultationNotification(
+      appointment.id,
+      "arrived"
+    )
+
+    if (!notificationSent) {
+      finishConsultationAction(
+        appointment.id,
+        "Arrival was recorded, but the customer notification email could not be sent."
+      )
+      return
+    }
+
+    finishConsultationAction(
+      appointment.id,
+      "✓ Customer notified — Dooty Done has arrived."
+    )
+  }
+
+  const handleConsultationComplete = async (appointment: Appointment) => {
+    const updated = await updateAppointmentStatus(appointment, "completed")
+
+    if (!updated) return
+
+    const notificationSent = await sendCustomerConsultationNotification(
+      appointment.id,
+      "completed"
+    )
+
+    if (!notificationSent) {
+      finishConsultationAction(
+        appointment.id,
+        "Consultation marked complete, but the customer follow-up email could not be sent."
+      )
+      return
+    }
+
+    finishConsultationAction(
+      appointment.id,
+      "✓ Consultation complete — customer follow-up email sent."
+    )
+  }
+
   const chargeCompletedJob = async (jobId: number) => {
     try {
       const { data: sessionData, error: sessionError } =
@@ -2259,6 +2420,12 @@ export default function AdminDashboard() {
                   </span>
                 </div>
 
+                {consultationMessage && (
+                  <div className="mt-5 rounded-2xl border border-[#678739]/20 bg-[#F1F5EA] px-4 py-3 text-sm font-bold text-[#536f2e]">
+                    {consultationMessage}
+                  </div>
+                )}
+
                 <div className="mt-6 space-y-4">
                   {upcomingAppointments.length === 0 ? (
                     <div className="rounded-2xl bg-[#F1F5EA] p-5 text-sm font-semibold text-[#0A1821]/60">
@@ -2298,9 +2465,50 @@ export default function AdminDashboard() {
                               )}
                             </div>
 
-                            <span className="w-fit rounded-full bg-[#678739]/10 px-3 py-1.5 text-xs font-black uppercase text-[#536f2e]">
-                              {appointment.status}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="w-fit rounded-full bg-[#678739]/10 px-3 py-1.5 text-xs font-black uppercase text-[#536f2e]">
+                                {appointment.status}
+                              </span>
+
+                              {appointment.status === "scheduled" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConsultationStartTrip(appointment)}
+                                  disabled={consultationBusyId === appointment.id}
+                                  className="rounded-full bg-[#678739] px-4 py-2 text-xs font-black uppercase tracking-wide text-white transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {consultationBusyId === appointment.id
+                                    ? "Sending..."
+                                    : "On My Way"}
+                                </button>
+                              )}
+
+                              {appointment.status === "on_the_way" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConsultationArrive(appointment)}
+                                  disabled={consultationBusyId === appointment.id}
+                                  className="rounded-full bg-[#0A1821] px-4 py-2 text-xs font-black uppercase tracking-wide text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {consultationBusyId === appointment.id
+                                    ? "Sending..."
+                                    : "Arrived"}
+                                </button>
+                              )}
+
+                              {appointment.status === "arrived" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConsultationComplete(appointment)}
+                                  disabled={consultationBusyId === appointment.id}
+                                  className="rounded-full border border-[#678739] bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-[#536f2e] transition hover:bg-[#F1F5EA] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {consultationBusyId === appointment.id
+                                    ? "Sending..."
+                                    : "Consultation Complete"}
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {appointment.notes && (
