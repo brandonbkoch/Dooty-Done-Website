@@ -650,6 +650,17 @@ export default function AdminDashboard() {
       setRecurringStartDate(existingService.start_date || "")
       setRecurringStatus(existingService.status || "active")
       setRecurringNotes(existingService.notes || "")
+    } else {
+      const today = new Date()
+      const localToday = new Date(
+        today.getTime() - today.getTimezoneOffset() * 60000
+      )
+        .toISOString()
+        .slice(0, 10)
+
+      setRecurringStartDate(localToday)
+      setRecurringStatus("active")
+      setRecurringNotes("")
     }
   }
 
@@ -1205,28 +1216,43 @@ export default function AdminDashboard() {
           new Date(`${customerService.start_date}T12:00:00`)
         )
         const today = startOfLocalDay(new Date())
-        let cursor = new Date(today)
+        const generationStart = startDate > today ? startDate : today
 
         const frequency = service.frequency
+        let cursor = new Date(generationStart)
 
-        while (cursor <= horizon) {
-          const matchesDay = cursor.getDay() === schedule.day_of_week
-          const startsAfterService = cursor >= startDate
+        if (frequency === "weekly" || frequency === "twice-weekly") {
+          while (cursor <= horizon) {
+            if (cursor.getDay() === schedule.day_of_week) {
+              const scheduledDateTime = buildLocalDateTime(
+                cursor,
+                schedule.service_time
+              )
+              const key = `${schedule.id}|${scheduledDateTime.getTime()}`
 
-          let frequencyMatches = false
+              if (!existingKeys.has(key)) {
+                rowsToInsert.push({
+                  customer_service_id: schedule.customer_service_id,
+                  recurring_schedule_id: schedule.id,
+                  scheduled_for: scheduledDateTime.toISOString(),
+                  status: "scheduled",
+                })
+                existingKeys.add(key)
+              }
+            }
 
-          if (frequency === "weekly" || frequency === "twice-weekly") {
-            frequencyMatches = true
-          } else if (frequency === "biweekly") {
-            const diffDays = Math.floor(
-              (startOfLocalDay(cursor).getTime() - startDate.getTime()) /
-                (1000 * 60 * 60 * 24)
-            )
-            frequencyMatches = diffDays >= 0 && diffDays % 14 === 0
+            cursor.setDate(cursor.getDate() + 1)
+          }
+        } else if (frequency === "biweekly") {
+          while (cursor <= horizon && cursor.getDay() !== schedule.day_of_week) {
+            cursor.setDate(cursor.getDate() + 1)
           }
 
-          if (matchesDay && startsAfterService && frequencyMatches) {
-            const scheduledDateTime = buildLocalDateTime(cursor, schedule.service_time)
+          while (cursor <= horizon) {
+            const scheduledDateTime = buildLocalDateTime(
+              cursor,
+              schedule.service_time
+            )
             const key = `${schedule.id}|${scheduledDateTime.getTime()}`
 
             if (!existingKeys.has(key)) {
@@ -1238,9 +1264,9 @@ export default function AdminDashboard() {
               })
               existingKeys.add(key)
             }
-          }
 
-          cursor.setDate(cursor.getDate() + 1)
+            cursor.setDate(cursor.getDate() + 14)
+          }
         }
       }
 
