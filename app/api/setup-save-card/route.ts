@@ -130,7 +130,7 @@ export async function POST(request: Request) {
       .digest("hex")
 
     const squareCustomerResponse = await fetch(
-      "https://connect.squareupsandbox.com/v2/customers",
+      "https://connect.squareup.com/v2/customers",
       {
         method: "POST",
         headers: {
@@ -196,7 +196,7 @@ export async function POST(request: Request) {
     // ------------------------------------------------------------
 
     const squareCardResponse = await fetch(
-      "https://connect.squareupsandbox.com/v2/cards",
+      "https://connect.squareup.com/v2/cards",
       {
         method: "POST",
         headers: {
