@@ -98,6 +98,7 @@ export default function AdminDashboard() {
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
+  const [currentTime] = useState(() => Date.now())
   const [userEmail, setUserEmail] = useState("")
   const [customers, setCustomers] = useState<Customer[]>([])
   const [appointments, setAppointments] = useState<Appointment[]>([])
@@ -130,6 +131,7 @@ export default function AdminDashboard() {
   const [recurringStatus, setRecurringStatus] = useState("active")
   const [recurringNotes, setRecurringNotes] = useState("")
   const [recurringBusy, setRecurringBusy] = useState(false)
+  const [paymentSetupBusy, setPaymentSetupBusy] = useState(false)
 
   const [recurringSchedules, setRecurringSchedules] = useState<RecurringSchedule[]>([])
   const [scheduleCustomerServiceId, setScheduleCustomerServiceId] = useState("")
@@ -146,6 +148,12 @@ export default function AdminDashboard() {
   const [jobActionBusy, setJobActionBusy] = useState(false)
   const [completionPhoto, setCompletionPhoto] = useState<File | null>(null)
   const [completionGateClosed, setCompletionGateClosed] = useState(false)
+
+  const startOfLocalDay = (date: Date) => {
+    const result = new Date(date)
+    result.setHours(0, 0, 0, 0)
+    return result
+  }
 
   const loadDashboard = async () => {
     setLoading(true)
@@ -294,7 +302,10 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
+    // Intentional bootstrap: loadDashboard synchronizes the dashboard with the authenticated session and database.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDashboard()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleLogout = async () => {
@@ -351,7 +362,7 @@ export default function AdminDashboard() {
 
   const upcomingAppointments = appointments.filter(
     (appointment) =>
-      new Date(appointment.scheduled_at).getTime() >= Date.now()
+      new Date(appointment.scheduled_at).getTime() >= currentTime
   )
 
   const recurringServicesOnly = services.filter(
@@ -688,6 +699,92 @@ export default function AdminDashboard() {
       setRecurringPrice(String(acceptedQuote.quoted_price))
     } else {
       setRecurringPrice(String(selectedService.base_price))
+    }
+  }
+
+  const handleSendPaymentSetupLink = async () => {
+    if (!recurringCustomerId) {
+      setErrorMessage("Please choose a recurring customer first.")
+      return
+    }
+
+    const selectedCustomer = customers.find(
+      (customer) => customer.id === Number(recurringCustomerId)
+    )
+
+    if (!selectedCustomer) {
+      setErrorMessage("Please select a valid customer.")
+      return
+    }
+
+    const acceptedQuote = quotes.find(
+      (quote) =>
+        quote.customer_id === selectedCustomer.id &&
+        quote.status === "accepted" &&
+        ["weekly", "biweekly", "twice-weekly"].includes(
+          quote.service_frequency || ""
+        )
+    )
+
+    if (!acceptedQuote) {
+      setErrorMessage(
+        "This customer must have an accepted recurring quote before sending the payment setup link."
+      )
+      return
+    }
+
+    if (!selectedCustomer.email) {
+      setErrorMessage(
+        "This customer does not have an email address. Add an email address before sending the payment setup link."
+      )
+      return
+    }
+
+    setPaymentSetupBusy(true)
+    setErrorMessage("")
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (sessionError || !session?.access_token) {
+        throw new Error("Your admin session has expired. Please log in again.")
+      }
+
+      const response = await fetch("/api/send-payment-setup-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          customerId: selectedCustomer.id,
+          quoteId: acceptedQuote.id,
+        }),
+      })
+
+      const result = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error || "We couldn't send the payment setup link."
+        )
+      }
+
+      alert(
+        `Payment setup link sent to ${selectedCustomer.email}. The link expires in 24 hours.`
+      )
+    } catch (error) {
+      console.error("Send payment setup link error:", error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "We couldn't send the payment setup link."
+      )
+    } finally {
+      setPaymentSetupBusy(false)
     }
   }
 
@@ -1133,12 +1230,6 @@ export default function AdminDashboard() {
     })
   }
 
-  const startOfLocalDay = (date: Date) => {
-    const result = new Date(date)
-    result.setHours(0, 0, 0, 0)
-    return result
-  }
-
   const buildLocalDateTime = (date: Date, timeString: string) => {
     const result = new Date(date)
     const [hours, minutes] = timeString.slice(0, 5).split(":").map(Number)
@@ -1219,7 +1310,7 @@ export default function AdminDashboard() {
         const generationStart = startDate > today ? startDate : today
 
         const frequency = service.frequency
-        let cursor = new Date(generationStart)
+        const cursor = new Date(generationStart)
 
         if (frequency === "weekly" || frequency === "twice-weekly") {
           while (cursor <= horizon) {
@@ -1314,12 +1405,6 @@ export default function AdminDashboard() {
     )
 
     return services.find((service) => service.id === customerService?.service_id)
-  }
-
-  const getScheduleForJob = (job: Job) => {
-    return recurringSchedules.find(
-      (schedule) => schedule.id === job.recurring_schedule_id
-    )
   }
 
   const selectedJob =
@@ -1872,19 +1957,8 @@ export default function AdminDashboard() {
   }
 
   const upcomingJobs = jobs.filter(
-    (job) => new Date(job.scheduled_for).getTime() >= Date.now()
+    (job) => new Date(job.scheduled_for).getTime() >= currentTime
   )
-
-  const todaysJobs = upcomingJobs.filter((job) => {
-    const jobDate = new Date(job.scheduled_for)
-    const today = new Date()
-
-    return (
-      jobDate.getFullYear() === today.getFullYear() &&
-      jobDate.getMonth() === today.getMonth() &&
-      jobDate.getDate() === today.getDate()
-    )
-  })
 
   const startOfWeek = (date: Date) => {
     const result = new Date(date)
@@ -2934,7 +3008,7 @@ export default function AdminDashboard() {
                   </h2>
 
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-[#0A1821]/60">
-                    Set up the customer's ongoing service after they accept
+                    Set up the customer&apos;s ongoing service after they accept
                     their quote.
                   </p>
                 </div>
@@ -3138,6 +3212,22 @@ export default function AdminDashboard() {
                     ? "Saving Recurring Service..."
                     : "Save Recurring Service"}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleSendPaymentSetupLink}
+                  disabled={
+                    paymentSetupBusy ||
+                    recurringBusy ||
+                    !recurringCustomerId ||
+                    acceptedRecurringCustomers.length === 0
+                  }
+                  className="w-full rounded-full border-2 border-[#678739] bg-white px-5 py-3.5 text-sm font-black text-[#536f2e] transition hover:bg-[#F1F5EA] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {paymentSetupBusy
+                    ? "Sending Payment Setup Link..."
+                    : "Send Payment Setup Link"}
+                </button>
               </form>
 
               <div className="mt-8 border-t border-[#0A1821]/10 pt-6">
@@ -3292,7 +3382,7 @@ export default function AdminDashboard() {
 
                   {activeRecurringCustomerServices.length === 0 && (
                     <p className="mt-2 text-xs font-semibold text-[#0A1821]/50">
-                      Set a customer's recurring service to Active first.
+                      Set a customer&apos;s recurring service to Active first.
                     </p>
                   )}
                 </div>

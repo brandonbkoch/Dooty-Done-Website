@@ -4,8 +4,32 @@ import { randomUUID, createHash } from "crypto"
 
 const SQUARE_VERSION = "2026-09-16"
 
-function getSquareErrorMessage(result: any, fallback: string) {
-  return result?.errors?.[0]?.detail || fallback
+type SquareErrorResponse = {
+  errors?: Array<{
+    detail?: string
+  }>
+}
+
+function getSquareErrorMessage(result: unknown, fallback: string) {
+  if (
+    typeof result === "object" &&
+    result !== null &&
+    "errors" in result &&
+    Array.isArray(result.errors)
+  ) {
+    const firstError = result.errors[0]
+
+    if (
+      typeof firstError === "object" &&
+      firstError !== null &&
+      "detail" in firstError &&
+      typeof firstError.detail === "string"
+    ) {
+      return firstError.detail
+    }
+  }
+
+  return fallback
 }
 
 export async function POST(request: Request) {

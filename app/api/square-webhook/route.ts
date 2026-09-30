@@ -5,11 +5,30 @@ import crypto from "crypto";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
-const SQUARE_WEBHOOK_SIGNATURE_KEY =
-  process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+const SQUARE_WEBHOOK_PRODUCTION_SIGNATURE_KEY =
+  process.env.SQUARE_WEBHOOK_PRODUCTION_SIGNATURE_KEY;
 
-const SQUARE_WEBHOOK_NOTIFICATION_URL =
-  process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
+const SQUARE_WEBHOOK_PRODUCTION_NOTIFICATION_URL =
+  process.env.SQUARE_WEBHOOK_PRODUCTION_NOTIFICATION_URL;
+
+type SquareWebhookEvent = {
+  type?: string;
+  event_id?: string;
+  data?: {
+    object?: {
+      payment?: {
+        id?: string;
+        status?: string;
+        order_id?: string | null;
+        amount_money?: {
+          amount?: number | string | bigint | null;
+        } | null;
+        completed_at?: string | null;
+        receipt_url?: string | null;
+      };
+    };
+  };
+};
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json(
@@ -26,19 +45,19 @@ function verifySquareSignature(
   rawBody: string
 ): boolean {
   if (
-    !SQUARE_WEBHOOK_SIGNATURE_KEY ||
-    !SQUARE_WEBHOOK_NOTIFICATION_URL
+    !SQUARE_WEBHOOK_PRODUCTION_SIGNATURE_KEY ||
+    !SQUARE_WEBHOOK_PRODUCTION_NOTIFICATION_URL
   ) {
     return false;
   }
 
   const payload =
-    SQUARE_WEBHOOK_NOTIFICATION_URL + rawBody;
+    SQUARE_WEBHOOK_PRODUCTION_NOTIFICATION_URL + rawBody;
 
   const expectedSignature = crypto
     .createHmac(
       "sha256",
-      SQUARE_WEBHOOK_SIGNATURE_KEY
+      SQUARE_WEBHOOK_PRODUCTION_SIGNATURE_KEY
     )
     .update(payload)
     .digest("base64");
@@ -89,8 +108,8 @@ export async function POST(
     }
 
     if (
-      !SQUARE_WEBHOOK_SIGNATURE_KEY ||
-      !SQUARE_WEBHOOK_NOTIFICATION_URL
+      !SQUARE_WEBHOOK_PRODUCTION_SIGNATURE_KEY ||
+      !SQUARE_WEBHOOK_PRODUCTION_NOTIFICATION_URL
     ) {
       console.error(
         "Missing Square webhook environment variables."
@@ -173,7 +192,7 @@ export async function POST(
     // 4. Parse Square event
     // ---------------------------------------------------------
 
-    let event: any;
+    let event: SquareWebhookEvent;
 
     try {
       event = JSON.parse(rawBody);
@@ -314,22 +333,7 @@ export async function POST(
       error: paymentLinkError,
     } = await supabaseAdmin
       .from("payment_links")
-      .select(
-        `
-        id,
-        customer_id,
-        customer_service_id,
-        appointment_id,
-        job_id,
-        amount,
-        name,
-        description,
-        payment_note,
-        square_payment_link_id,
-        square_order_id,
-        status
-        `
-      )
+      .select("id, customer_id, customer_service_id, appointment_id, job_id, amount, name, description, payment_note, square_payment_link_id, square_order_id, status")
       .eq(
         "square_order_id",
         squareOrderId
@@ -446,17 +450,7 @@ export async function POST(
             " | "
           ),
       })
-      .select(
-        `
-        id,
-        customer_id,
-        amount,
-        status,
-        payment_method,
-        square_payment_id,
-        job_id
-        `
-      )
+      .select("id, customer_id, amount, status, payment_method, square_payment_id, job_id")
       .single();
 
     if (insertError) {

@@ -45,27 +45,27 @@ type SquareCard = {
     token?: string
     errors?: unknown
   }>
-  destroy?: () => Promise<void> | void
+  destroy?: () => Promise<boolean> | void
 }
 
 export default function CustomerSetupPage() {
   const cardContainerRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<SquareCard | null>(null)
 
-  const [token, setToken] = useState("")
+  const [token] = useState(() => {
+    if (typeof window === "undefined") return ""
+
+    const params = new URLSearchParams(window.location.search)
+    return params.get("token")?.trim() || ""
+  })
   const [setup, setSetup] = useState<SetupContext | null>(null)
   const [loadingSetup, setLoadingSetup] = useState(true)
   const [loadingCard, setLoadingCard] = useState(false)
+  const [cardReady, setCardReady] = useState(false)
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const [consentGiven, setConsentGiven] = useState(false)
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const setupToken = params.get("token")?.trim() || ""
-    setToken(setupToken)
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -78,8 +78,6 @@ export default function CustomerSetupPage() {
         setLoadingSetup(false)
         return
       }
-
-      setErrorMessage("")
 
       try {
         const { data: setupRows, error: setupError } = await supabase.rpc(
@@ -114,7 +112,6 @@ export default function CustomerSetupPage() {
 
         if (!cancelled) {
           setSetup(setupRow as SetupContext)
-          setErrorMessage("")
         }
       } catch (error) {
         if (!cancelled) {
@@ -150,6 +147,7 @@ export default function CustomerSetupPage() {
       }
 
       setLoadingCard(true)
+      setCardReady(false)
 
       try {
         const squarePayments = await payments(
@@ -169,7 +167,8 @@ export default function CustomerSetupPage() {
         }
 
         await card.attach("#square-card-container")
-        cardRef.current = card as unknown as SquareCard
+        cardRef.current = card as SquareCard
+        setCardReady(true)
       } catch (error) {
         if (!cancelled) {
           console.error("Square card setup error:", error)
@@ -190,6 +189,7 @@ export default function CustomerSetupPage() {
       cancelled = true
       void cardRef.current?.destroy?.()
       cardRef.current = null
+      setCardReady(false)
     }
   }, [setup])
 
@@ -442,7 +442,7 @@ export default function CustomerSetupPage() {
               <button
                 type="button"
                 onClick={handleSaveCard}
-                disabled={saving || loadingSetup || loadingCard || !cardRef.current}
+                disabled={saving || loadingSetup || loadingCard || !cardReady}
                 className="mt-6 w-full rounded-full bg-[#678739] px-6 py-4 text-base font-black text-white shadow-lg transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? "Saving securely..." : "Save Card Securely →"}
@@ -455,7 +455,7 @@ export default function CustomerSetupPage() {
             </>
           ) : (
             <div className="mt-8 rounded-2xl bg-[#F1F5EA] p-5 text-center text-sm font-semibold text-[#0A1821]/60">
-              We couldn't load your setup information.
+              We couldn&apos;t load your setup information.
             </div>
           )}
         </section>
