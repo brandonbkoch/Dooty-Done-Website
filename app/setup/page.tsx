@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import Script from "next/script"
-import { payments } from "@square/web-sdk"
 import { supabase } from "../../lib/supabase"
 
 const SQUARE_APPLICATION_ID =
@@ -29,7 +28,7 @@ type SetupContext = {
   free_initial_cleanup_used: boolean
 }
 
-type CardInstance = {
+type SquareCard = {
   attach: (selector: string) => Promise<void>
   tokenize: (verificationDetails: {
     billingContact: {
@@ -54,9 +53,20 @@ type CardInstance = {
   destroy?: () => Promise<boolean> | void
 }
 
+type SquarePayments = {
+  card: () => Promise<unknown>
+}
+
+type SquareApi = {
+  payments: (
+    applicationId: string,
+    locationId: string
+  ) => SquarePayments
+}
+
 export default function CustomerSetupPage() {
   const cardContainerRef = useRef<HTMLDivElement | null>(null)
-  const cardRef = useRef<CardInstance | null>(null)
+  const cardRef = useRef<SquareCard | null>(null)
 
   const [token] = useState(() => {
     if (typeof window === "undefined") return ""
@@ -163,31 +173,46 @@ export default function CustomerSetupPage() {
 
       setLoadingCard(true)
       setCardReady(false)
+      setErrorMessage("")
 
       try {
-        const squarePayments = await payments(
+        const squareWindow = window as typeof window & {
+          Square?: SquareApi
+        }
+
+        if (!squareWindow.Square) {
+          throw new Error("Square.js did not initialize correctly.")
+        }
+
+        const squarePayments = squareWindow.Square.payments(
           SQUARE_APPLICATION_ID,
           SQUARE_LOCATION_ID
         )
 
         if (!squarePayments) {
-          throw new Error("Square could not load the secure payment form.")
+          throw new Error("Square could not initialize payments.")
         }
 
         const card = await squarePayments.card()
 
         if (cancelled) {
-          await card.destroy?.()
+          const destroyableCard = card as SquareCard
+          await destroyableCard.destroy?.()
           return
         }
 
-        await card.attach("#square-card-container")
+        const usableCard = card as SquareCard
 
-        cardRef.current = card as unknown as CardInstance
-        setCardReady(true)
+        await usableCard.attach("#square-card-container")
+
+        if (!cancelled) {
+          cardRef.current = usableCard
+          setCardReady(true)
+        }
       } catch (error) {
         if (!cancelled) {
           console.error("Square card setup error:", error)
+
           setErrorMessage(
             "We couldn't load the secure card form. Please refresh the page and try again."
           )
