@@ -3,10 +3,6 @@ import { createClient } from "@supabase/supabase-js"
 
 const ADMIN_EMAIL = "contact.dootydone@gmail.com"
 
-const SQUARE_API_BASE_URL =
-  process.env.SQUARE_API_BASE_URL ||
-  "https://connect.squareupsandbox.com"
-
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get("authorization")
@@ -90,6 +86,7 @@ export async function POST(request: Request) {
 
     if (existingPaymentError) {
       console.error("Existing payment lookup error:", existingPaymentError)
+
       return NextResponse.json(
         { error: "We couldn't check whether this job was already paid." },
         { status: 500 }
@@ -129,6 +126,7 @@ export async function POST(request: Request) {
 
     if (jobError) {
       console.error("Job lookup error:", jobError)
+
       return NextResponse.json(
         { error: "We couldn't load this job." },
         { status: 500 }
@@ -165,6 +163,7 @@ export async function POST(request: Request) {
         "Customer service lookup error:",
         customerServiceError
       )
+
       return NextResponse.json(
         { error: "We couldn't load this customer's service." },
         { status: 500 }
@@ -199,6 +198,7 @@ export async function POST(request: Request) {
 
     if (customerError) {
       console.error("Customer lookup error:", customerError)
+
       return NextResponse.json(
         { error: "We couldn't load this customer." },
         { status: 500 }
@@ -214,9 +214,6 @@ export async function POST(request: Request) {
 
     // ------------------------------------------------------------
     // FIRST CLEANUP FREE
-    //
-    // free_initial_cleanup_used = false means the free cleanup
-    // has not yet been used.
     // ------------------------------------------------------------
 
     if (customer.free_initial_cleanup_used === false) {
@@ -318,6 +315,7 @@ export async function POST(request: Request) {
         "Payment method lookup error:",
         paymentMethodError
       )
+
       return NextResponse.json(
         { error: "We couldn't load the customer's card on file." },
         { status: 500 }
@@ -346,17 +344,18 @@ export async function POST(request: Request) {
     const amountCents = Math.round(agreedPrice * 100)
 
     // ------------------------------------------------------------
-    // Charge Square
+    // CHARGE SQUARE PRODUCTION
     // ------------------------------------------------------------
 
     const squareResponse = await fetch(
-      `${SQUARE_API_BASE_URL}/v2/payments`,
+      "https://connect.squareup.com/v2/payments",
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${squareAccessToken}`,
           "Content-Type": "application/json",
           Accept: "application/json",
+          "Square-Version": "2026-09-16",
         },
         body: JSON.stringify({
           idempotency_key: `dooty-done-job-${job.id}`,
