@@ -2,11 +2,15 @@
 
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
+import Script from "next/script"
 import { payments } from "@square/web-sdk"
 import { supabase } from "../../lib/supabase"
 
-const SQUARE_APPLICATION_ID = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID || ""
-const SQUARE_LOCATION_ID = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID || ""
+const SQUARE_APPLICATION_ID =
+  process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID || ""
+
+const SQUARE_LOCATION_ID =
+  process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID || ""
 
 type SetupContext = {
   setup_token_id: number
@@ -25,17 +29,19 @@ type SetupContext = {
   free_initial_cleanup_used: boolean
 }
 
-type SquareCard = {
+type CardInstance = {
   attach: (selector: string) => Promise<void>
   tokenize: (verificationDetails: {
     billingContact: {
       givenName: string
       familyName: string
-      email?: string
-      phone?: string
+      email: string
+      phone: string
       addressLines: string[]
+      city: string
+      state: string
       countryCode: string
-      postalCode?: string
+      postalCode: string
     }
     intent: "STORE"
     customerInitiated: boolean
@@ -50,7 +56,7 @@ type SquareCard = {
 
 export default function CustomerSetupPage() {
   const cardContainerRef = useRef<HTMLDivElement | null>(null)
-  const cardRef = useRef<SquareCard | null>(null)
+  const cardRef = useRef<CardInstance | null>(null)
 
   const [token] = useState(() => {
     if (typeof window === "undefined") return ""
@@ -58,6 +64,7 @@ export default function CustomerSetupPage() {
     const params = new URLSearchParams(window.location.search)
     return params.get("token")?.trim() || ""
   })
+
   const [setup, setSetup] = useState<SetupContext | null>(null)
   const [loadingSetup, setLoadingSetup] = useState(true)
   const [loadingCard, setLoadingCard] = useState(false)
@@ -66,6 +73,7 @@ export default function CustomerSetupPage() {
   const [success, setSuccess] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const [consentGiven, setConsentGiven] = useState(false)
+  const [squareLoaded, setSquareLoaded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -139,7 +147,14 @@ export default function CustomerSetupPage() {
     let cancelled = false
 
     const setupSquareCard = async () => {
-      if (!setup || !cardContainerRef.current || cardRef.current) return
+      if (
+        !setup ||
+        !squareLoaded ||
+        !cardContainerRef.current ||
+        cardRef.current
+      ) {
+        return
+      }
 
       if (!SQUARE_APPLICATION_ID || !SQUARE_LOCATION_ID) {
         setErrorMessage("The secure payment form is not configured correctly.")
@@ -167,7 +182,8 @@ export default function CustomerSetupPage() {
         }
 
         await card.attach("#square-card-container")
-        cardRef.current = card as SquareCard
+
+        cardRef.current = card as unknown as CardInstance
         setCardReady(true)
       } catch (error) {
         if (!cancelled) {
@@ -187,11 +203,12 @@ export default function CustomerSetupPage() {
 
     return () => {
       cancelled = true
+
       void cardRef.current?.destroy?.()
       cardRef.current = null
       setCardReady(false)
     }
-  }, [setup])
+  }, [setup, squareLoaded])
 
   const handleSaveCard = async () => {
     setErrorMessage("")
@@ -222,11 +239,13 @@ export default function CustomerSetupPage() {
         billingContact: {
           givenName: setup.first_name,
           familyName: setup.last_name,
-          email: setup.email || undefined,
-          phone: setup.phone || undefined,
+          email: setup.email || "",
+          phone: setup.phone || "",
           addressLines: [setup.address],
+          city: "Colorado Springs",
+          state: "CO",
           countryCode: "US",
-          postalCode: setup.zip_code || undefined,
+          postalCode: setup.zip_code || "",
         },
         intent: "STORE",
         customerInitiated: true,
@@ -235,6 +254,7 @@ export default function CustomerSetupPage() {
 
       if (tokenResult.status !== "OK" || !tokenResult.token) {
         console.error("Square tokenization errors:", tokenResult.errors)
+
         throw new Error(
           "We couldn't verify that card. Please check the card information and try again."
         )
@@ -264,6 +284,7 @@ export default function CustomerSetupPage() {
       setConsentGiven(true)
     } catch (error) {
       console.error("Save card error:", error)
+
       setErrorMessage(
         error instanceof Error
           ? error.message
@@ -278,10 +299,13 @@ export default function CustomerSetupPage() {
     switch (frequency) {
       case "weekly":
         return "Weekly"
+
       case "twice-weekly":
         return "Twice Weekly"
+
       case "biweekly":
         return "Every Other Week"
+
       default:
         return "Recurring Service"
     }
@@ -324,146 +348,174 @@ export default function CustomerSetupPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#FEFBF7] px-5 py-10 text-[#0A1821] sm:px-8">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-8 text-center">
-          <Image
-            src="/dooty-done-logo.png"
-            alt="Dooty Done"
-            width={220}
-            height={100}
-            className="mx-auto h-auto w-44 object-contain sm:w-52"
-          />
-        </div>
+    <>
+      <Script
+        src="https://web.squarecdn.com/v1/square.js"
+        strategy="afterInteractive"
+        onLoad={() => {
+          setSquareLoaded(true)
+        }}
+        onError={() => {
+          setErrorMessage(
+            "Square's secure payment system could not be loaded. Please refresh the page and try again."
+          )
+        }}
+      />
 
-        <section className="rounded-3xl border border-[#0A1821]/10 bg-white p-6 shadow-xl sm:p-10">
-          <p className="text-center font-extrabold uppercase tracking-[0.16em] text-[#678739]">
-            Customer Setup
-          </p>
+      <main className="min-h-screen bg-[#FEFBF7] px-5 py-10 text-[#0A1821] sm:px-8">
+        <div className="mx-auto max-w-2xl">
+          <div className="mb-8 text-center">
+            <Image
+              src="/dooty-done-logo.png"
+              alt="Dooty Done"
+              width={220}
+              height={100}
+              className="mx-auto h-auto w-44 object-contain sm:w-52"
+            />
+          </div>
 
-          <h1 className="mt-3 text-center text-3xl font-black sm:text-4xl">
-            Secure Your Service
-          </h1>
+          <section className="rounded-3xl border border-[#0A1821]/10 bg-white p-6 shadow-xl sm:p-10">
+            <p className="text-center font-extrabold uppercase tracking-[0.16em] text-[#678739]">
+              Customer Setup
+            </p>
 
-          {loadingSetup ? (
-            <div className="mt-8 rounded-2xl bg-[#F1F5EA] p-5 text-center text-sm font-bold text-[#536f2e]">
-              Loading your setup information...
-            </div>
-          ) : errorMessage && !setup ? (
-            <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm font-semibold leading-6 text-red-700">
-              {errorMessage}
-            </div>
-          ) : setup ? (
-            <>
-              <div className="mt-8 rounded-2xl bg-[#F1F5EA] p-5">
-                <p className="text-lg font-black">
-                  Hi {setup.first_name}!
-                </p>
+            <h1 className="mt-3 text-center text-3xl font-black sm:text-4xl">
+              Secure Your Service
+            </h1>
 
-                <p className="mt-2 text-sm leading-6 text-[#0A1821]/65">
-                  Your Dooty Done recurring service is ready for the next step.
-                  Please review the details below and securely save your card on
-                  file.
-                </p>
-
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">
-                      Service
-                    </p>
-                    <p className="mt-1 font-black">
-                      {formatFrequency(setup.service_frequency)}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">
-                      Agreed Price
-                    </p>
-                    <p className="mt-1 font-black text-[#678739]">
-                      {setup.quoted_price !== null
-                        ? `$${Number(setup.quoted_price).toFixed(2)} / visit`
-                        : "Custom quote"}
-                    </p>
-                  </div>
-                </div>
-
-                {setup.free_initial_cleanup_used === false && (
-                  <div className="mt-5 rounded-2xl bg-white p-4">
-                    <p className="font-black text-[#536f2e]">
-                      🎉 Your first recurring cleanup is FREE.
-                    </p>
-                  </div>
-                )}
+            {loadingSetup ? (
+              <div className="mt-8 rounded-2xl bg-[#F1F5EA] p-5 text-center text-sm font-bold text-[#536f2e]">
+                Loading your setup information...
               </div>
-
-              <div className="mt-8">
-                <h2 className="text-xl font-black">Save your card</h2>
-                <p className="mt-2 text-sm leading-6 text-[#0A1821]/60">
-                  Your card information is entered directly into Square’s secure
-                  payment form. Dooty Done does not store your full card number.
-                </p>
-
-                <div
-                  id="square-card-container"
-                  ref={cardContainerRef}
-                  className="mt-5 min-h-24 rounded-2xl border border-[#0A1821]/10 bg-white p-2"
-                />
-
-                {loadingCard && (
-                  <p className="mt-3 text-sm font-semibold text-[#0A1821]/50">
-                    Loading secure payment form...
+            ) : errorMessage && !setup ? (
+              <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm font-semibold leading-6 text-red-700">
+                {errorMessage}
+              </div>
+            ) : setup ? (
+              <>
+                <div className="mt-8 rounded-2xl bg-[#F1F5EA] p-5">
+                  <p className="text-lg font-black">
+                    Hi {setup.first_name}!
                   </p>
-                )}
-              </div>
 
-              <label className="mt-6 flex items-start gap-3 rounded-2xl border border-[#0A1821]/10 bg-[#FEFBF7] p-4">
-                <input
-                  type="checkbox"
-                  checked={consentGiven}
-                  onChange={(event) => setConsentGiven(event.target.checked)}
-                  disabled={saving}
-                  className="mt-1 h-5 w-5 accent-[#678739]"
-                />
-                <span className="text-sm leading-6 text-[#0A1821]/70">
-                  I authorize Dooty Done to securely keep this card on file and
-                  charge it for completed recurring services at the agreed
-                  price. I understand future charges are made after service is
-                  completed.
-                </span>
-              </label>
+                  <p className="mt-2 text-sm leading-6 text-[#0A1821]/65">
+                    Your Dooty Done recurring service is ready for the next
+                    step. Please review the details below and securely save
+                    your card on file.
+                  </p>
 
-              {errorMessage && (
-                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-700">
-                  {errorMessage}
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">
+                        Service
+                      </p>
+
+                      <p className="mt-1 font-black">
+                        {formatFrequency(setup.service_frequency)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">
+                        Agreed Price
+                      </p>
+
+                      <p className="mt-1 font-black text-[#678739]">
+                        {setup.quoted_price !== null
+                          ? `$${Number(setup.quoted_price).toFixed(2)} / visit`
+                          : "Custom quote"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {setup.free_initial_cleanup_used === false && (
+                    <div className="mt-5 rounded-2xl bg-white p-4">
+                      <p className="font-black text-[#536f2e]">
+                        🎉 Your first recurring cleanup is FREE.
+                      </p>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              <button
-                type="button"
-                onClick={handleSaveCard}
-                disabled={saving || loadingSetup || loadingCard || !cardReady}
-                className="mt-6 w-full rounded-full bg-[#678739] px-6 py-4 text-base font-black text-white shadow-lg transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving ? "Saving securely..." : "Save Card Securely →"}
-              </button>
+                <div className="mt-8">
+                  <h2 className="text-xl font-black">Save your card</h2>
 
-              <p className="mt-4 text-center text-xs leading-5 text-[#0A1821]/45">
-                Securely processed by Square. Dooty Done never sees or stores
-                your full card number.
-              </p>
-            </>
-          ) : (
-            <div className="mt-8 rounded-2xl bg-[#F1F5EA] p-5 text-center text-sm font-semibold text-[#0A1821]/60">
-              We couldn&apos;t load your setup information.
-            </div>
-          )}
-        </section>
+                  <p className="mt-2 text-sm leading-6 text-[#0A1821]/60">
+                    Your card information is entered directly into Square’s
+                    secure payment form. Dooty Done does not store your full
+                    card number.
+                  </p>
 
-        <p className="mt-6 text-center text-xs font-semibold text-[#0A1821]/45">
-          Dooty Done LLC • Colorado Springs, Colorado
-        </p>
-      </div>
-    </main>
+                  <div
+                    id="square-card-container"
+                    ref={cardContainerRef}
+                    className="mt-5 min-h-24 rounded-2xl border border-[#0A1821]/10 bg-white p-2"
+                  />
+
+                  {loadingCard && (
+                    <p className="mt-3 text-sm font-semibold text-[#0A1821]/50">
+                      Loading secure payment form...
+                    </p>
+                  )}
+                </div>
+
+                <label className="mt-6 flex items-start gap-3 rounded-2xl border border-[#0A1821]/10 bg-[#FEFBF7] p-4">
+                  <input
+                    type="checkbox"
+                    checked={consentGiven}
+                    onChange={(event) =>
+                      setConsentGiven(event.target.checked)
+                    }
+                    disabled={saving}
+                    className="mt-1 h-5 w-5 accent-[#678739]"
+                  />
+
+                  <span className="text-sm leading-6 text-[#0A1821]/70">
+                    I authorize Dooty Done to securely keep this card on file
+                    and charge it for completed recurring services at the agreed
+                    price. I understand future charges are made after service
+                    is completed.
+                  </span>
+                </label>
+
+                {errorMessage && (
+                  <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-700">
+                    {errorMessage}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSaveCard}
+                  disabled={
+                    saving ||
+                    loadingSetup ||
+                    loadingCard ||
+                    !cardReady ||
+                    !squareLoaded
+                  }
+                  className="mt-6 w-full rounded-full bg-[#678739] px-6 py-4 text-base font-black text-white shadow-lg transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? "Saving securely..." : "Save Card Securely →"}
+                </button>
+
+                <p className="mt-4 text-center text-xs leading-5 text-[#0A1821]/45">
+                  Securely processed by Square. Dooty Done never sees or stores
+                  your full card number.
+                </p>
+              </>
+            ) : (
+              <div className="mt-8 rounded-2xl bg-[#F1F5EA] p-5 text-center text-sm font-semibold text-[#0A1821]/60">
+                We couldn&apos;t load your setup information.
+              </div>
+            )}
+          </section>
+
+          <p className="mt-6 text-center text-xs font-semibold text-[#0A1821]/45">
+            Dooty Done LLC • Colorado Springs, Colorado
+          </p>
+        </div>
+      </main>
+    </>
   )
 }
