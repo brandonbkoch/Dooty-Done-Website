@@ -98,7 +98,7 @@ export default function AdminDashboard() {
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
-  const [currentTime] = useState(() => Date.now())
+  const [renderNow] = useState(() => Date.now())
   const [userEmail, setUserEmail] = useState("")
   const [customers, setCustomers] = useState<Customer[]>([])
   const [appointments, setAppointments] = useState<Appointment[]>([])
@@ -302,9 +302,10 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    // Intentional bootstrap: loadDashboard synchronizes the dashboard with the authenticated session and database.
+    // Dashboard loading intentionally synchronizes authenticated data into React state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDashboard()
+    // loadDashboard is defined inside this component and intentionally runs once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -362,7 +363,7 @@ export default function AdminDashboard() {
 
   const upcomingAppointments = appointments.filter(
     (appointment) =>
-      new Date(appointment.scheduled_at).getTime() >= currentTime
+      new Date(appointment.scheduled_at).getTime() >= renderNow
   )
 
   const recurringServicesOnly = services.filter(
@@ -1407,6 +1408,12 @@ export default function AdminDashboard() {
     return services.find((service) => service.id === customerService?.service_id)
   }
 
+  const getScheduleForJob = (job: Job) => {
+    return recurringSchedules.find(
+      (schedule) => schedule.id === job.recurring_schedule_id
+    )
+  }
+
   const selectedJob =
     selectedJobId === null
       ? null
@@ -1957,8 +1964,19 @@ export default function AdminDashboard() {
   }
 
   const upcomingJobs = jobs.filter(
-    (job) => new Date(job.scheduled_for).getTime() >= currentTime
+    (job) => new Date(job.scheduled_for).getTime() >= renderNow
   )
+
+  const todaysJobs = upcomingJobs.filter((job) => {
+    const jobDate = new Date(job.scheduled_for)
+    const today = new Date()
+
+    return (
+      jobDate.getFullYear() === today.getFullYear() &&
+      jobDate.getMonth() === today.getMonth() &&
+      jobDate.getDate() === today.getDate()
+    )
+  })
 
   const startOfWeek = (date: Date) => {
     const result = new Date(date)
@@ -3702,6 +3720,7 @@ export default function AdminDashboard() {
                     />
                     Gate is closed and secured
                   </label>
+
 
                   <button
                     type="button"
