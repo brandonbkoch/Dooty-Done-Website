@@ -794,59 +794,7 @@ const dogsValue = String(formData.get("dogs") || "").trim()
       return
     }
 
-const selectedSlot = availability.find(
-
-
-
-      (slot) =>
-
-
-
-        slot.available_date === consultationDate &&
-
-
-
-        slot.available_time.slice(0, 5) === consultationTime
-
-
-
-    )
-
-
-
-
-
-
-
-    if (!selectedSlot) {
-
-
-
-      alert(
-
-
-
-        "That consultation time is no longer available. Please choose another time."
-
-
-
-      )
-
-
-
-      return
-
-
-
-    }
-
-
-
-
-
-
-
-    const nameParts = name.split(/\s+/)
+const nameParts = name.split(/\s+/)
 
 
 
