@@ -145,7 +145,10 @@ export default function AdminDashboard() {
   const [calendarView, setCalendarView] = useState<"week" | "month">("week")
   const [jobsBusy, setJobsBusy] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null)
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | null>(null)
   const [jobActionBusy, setJobActionBusy] = useState(false)
+  const [simulatePaymentFailure, setSimulatePaymentFailure] = useState(false)
   const [completionPhoto, setCompletionPhoto] = useState<File | null>(null)
   const [completionGateClosed, setCompletionGateClosed] = useState(false)
 
@@ -1419,6 +1422,24 @@ export default function AdminDashboard() {
       ? null
       : jobs.find((job) => job.id === selectedJobId) || null
 
+  const selectedCustomer =
+    selectedCustomerId === null
+      ? null
+      : customers.find((customer) => customer.id === selectedCustomerId) || null
+
+  const selectedAppointment =
+    selectedAppointmentId === null
+      ? null
+      : appointments.find((appointment) => appointment.id === selectedAppointmentId) || null
+
+  const selectedAppointmentQuote = selectedAppointment
+    ? quotes.find(
+        (quote) =>
+          quote.customer_id === selectedAppointment.customer_id &&
+          quote.appointment_id === selectedAppointment.id
+      ) || null
+    : null
+
   const sendCustomerJobNotification = async (
     jobId: number,
     notificationType: "start_trip" | "arrived" | "completed"
@@ -1620,7 +1641,18 @@ export default function AdminDashboard() {
     )
   }
 
-  const chargeCompletedJob = async (jobId: number) => {
+  const chargeCompletedJob = async (
+    jobId: number,
+    shouldSimulateFailure = false
+  ) => {
+    if (shouldSimulateFailure) {
+      return {
+        success: false,
+        error:
+          "SIMULATED PAYMENT FAILURE: Square could not process the payment. No Square charge was made and no payment record was created.",
+      }
+    }
+
     try {
       const { data: sessionData, error: sessionError } =
         await supabase.auth.getSession()
@@ -1843,7 +1875,10 @@ export default function AdminDashboard() {
     // A payment failure does NOT undo the completed job.
     // ------------------------------------------------------------
 
-    const paymentResult = await chargeCompletedJob(job.id)
+    const paymentResult = await chargeCompletedJob(
+      job.id,
+      simulatePaymentFailure
+    )
 
     // ------------------------------------------------------------
     // 4. Send completed-service customer email
@@ -1860,6 +1895,7 @@ export default function AdminDashboard() {
 
     setCompletionPhoto(null)
     setCompletionGateClosed(false)
+    setSimulatePaymentFailure(false)
     setSelectedJobId(null)
 
     await loadDashboard()
@@ -1953,6 +1989,27 @@ export default function AdminDashboard() {
     setCompletionPhoto(null)
     setCompletionGateClosed(job.gate_closed)
     setErrorMessage("")
+  }
+
+  const handleCustomerClick = (customer: Customer) => {
+    setSelectedCustomerId(customer.id)
+    setSelectedAppointmentId(null)
+    setSelectedJobId(null)
+    setErrorMessage("")
+  }
+
+  const handleAppointmentClick = (appointment: Appointment) => {
+    setSelectedAppointmentId(appointment.id)
+    setSelectedCustomerId(appointment.customer_id)
+    setSelectedJobId(null)
+    setErrorMessage("")
+  }
+
+  const closeCustomerDetails = () => {
+    if (consultationBusyId !== null) return
+
+    setSelectedCustomerId(null)
+    setSelectedAppointmentId(null)
   }
 
   const closeJobDetails = () => {
@@ -2329,9 +2386,11 @@ export default function AdminDashboard() {
                               const customer = appointment.customer?.[0]
 
                               return (
-                                <div
+                                <button
+                                  type="button"
                                   key={`appointment-${appointment.id}`}
-                                  className="rounded-xl border border-[#0A1821]/10 bg-[#F7F7F7] p-3"
+                                  onClick={() => handleAppointmentClick(appointment)}
+                                  className="w-full rounded-xl border border-[#0A1821]/10 bg-[#F7F7F7] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#678739]/45 hover:shadow-sm"
                                 >
                                   <p className="text-[11px] font-black uppercase tracking-wide text-[#0A1821]/45">
                                     Consultation
@@ -2349,7 +2408,7 @@ export default function AdminDashboard() {
                                       minute: "2-digit",
                                     })}
                                   </p>
-                                </div>
+                                </button>
                               )
                             })}
 
@@ -3579,8 +3638,14 @@ export default function AdminDashboard() {
                         key={customer.id}
                         className="border-b border-[#0A1821]/5 last:border-0"
                       >
-                        <td className="py-4 pr-4 font-black">
-                          {customer.first_name} {customer.last_name}
+                        <td className="py-4 pr-4">
+                          <button
+                            type="button"
+                            onClick={() => handleCustomerClick(customer)}
+                            className="text-left font-black underline-offset-4 transition hover:text-[#678739] hover:underline"
+                          >
+                            {customer.first_name} {customer.last_name}
+                          </button>
                         </td>
 
                         <td className="py-4 pr-4 text-sm">
@@ -3615,6 +3680,156 @@ export default function AdminDashboard() {
           </>
         )}
       </div>
+
+      {selectedCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A1821]/45 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-extrabold uppercase tracking-[0.15em] text-[#678739]">
+                  Customer Details
+                </p>
+                <h2 className="mt-2 text-2xl font-black">
+                  {selectedCustomer.first_name} {selectedCustomer.last_name}
+                </h2>
+                <p className="mt-1 text-sm font-bold uppercase text-[#536f2e]">
+                  {selectedCustomer.status}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeCustomerDetails}
+                disabled={consultationBusyId !== null}
+                className="rounded-full border border-[#0A1821]/10 px-3 py-1.5 text-lg font-black text-[#0A1821]/60 hover:text-[#0A1821] disabled:opacity-50"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-[#0A1821]/10 bg-[#FEFBF7] p-4">
+                <p className="text-[11px] font-black uppercase tracking-wide text-[#0A1821]/45">Contact</p>
+                <p className="mt-2 font-black">{selectedCustomer.phone || "—"}</p>
+                <p className="mt-1 break-all text-sm text-[#0A1821]/60">{selectedCustomer.email || "No email on file"}</p>
+              </div>
+
+              <div className="rounded-2xl border border-[#0A1821]/10 bg-[#FEFBF7] p-4">
+                <p className="text-[11px] font-black uppercase tracking-wide text-[#0A1821]/45">Dogs</p>
+                <p className="mt-2 font-black">{selectedCustomer.number_of_dogs ?? "—"}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-[#0A1821]/10 bg-[#F1F5EA] p-4">
+              <p className="text-[11px] font-black uppercase tracking-wide text-[#536f2e]">Property</p>
+              <p className="mt-2 font-black">{selectedCustomer.address || "Address unavailable"}</p>
+              <p className="mt-1 text-sm font-semibold text-[#0A1821]/60">ZIP Code: {selectedCustomer.zip_code || "—"}</p>
+            </div>
+
+            {selectedCustomer.notes && (
+              <div className="mt-4 rounded-2xl border border-[#0A1821]/10 bg-white p-4">
+                <p className="text-[11px] font-black uppercase tracking-wide text-[#0A1821]/45">Customer / Property Notes</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#0A1821]/70">{selectedCustomer.notes}</p>
+              </div>
+            )}
+
+            {selectedAppointment && (
+              <div className="mt-6 border-t border-[#0A1821]/10 pt-6">
+                <p className="font-extrabold uppercase tracking-[0.15em] text-[#678739]">
+                  Consultation
+                </p>
+                <div className="mt-3 rounded-2xl bg-[#F7F7F7] p-4">
+                  <p className="font-black">
+                    {formatJobDateTime(selectedAppointment.scheduled_at)}
+                  </p>
+                  <p className="mt-1 text-sm font-bold uppercase text-[#536f2e]">
+                    Status: {selectedAppointment.status.replace("_", " ")}
+                  </p>
+                  {selectedAppointment.notes && (
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#0A1821]/65">
+                      {selectedAppointment.notes}
+                    </p>
+                  )}
+                </div>
+
+                {selectedAppointmentQuote ? (
+                  <div className="mt-3 rounded-2xl border border-[#678739]/20 bg-[#F1F5EA] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-[#536f2e]">Quote</p>
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-black uppercase text-[#536f2e]">
+                        {selectedAppointmentQuote.status}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xl font-black">
+                      {selectedAppointmentQuote.quoted_price !== null
+                        ? `$${Number(selectedAppointmentQuote.quoted_price).toFixed(2)}`
+                        : "Custom / not set"}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#0A1821]/60">
+                      {formatFrequency(selectedAppointmentQuote.service_frequency)}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-2xl bg-white p-4 text-sm font-semibold text-[#0A1821]/50">
+                    No quote has been created for this consultation yet.
+                  </div>
+                )}
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  {selectedAppointment.status === "scheduled" && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setConsultationBusyId(selectedAppointment.id)
+                        await handleConsultationStartTrip(selectedAppointment)
+                        setConsultationBusyId(null)
+                      }}
+                      disabled={consultationBusyId !== null}
+                      className="rounded-full bg-[#678739] px-4 py-3 text-xs font-black text-white shadow-md transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {consultationBusyId === selectedAppointment.id ? "Updating..." : "🚗 Start Trip"}
+                    </button>
+                  )}
+
+                  {selectedAppointment.status === "on_the_way" && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setConsultationBusyId(selectedAppointment.id)
+                        await handleConsultationArrive(selectedAppointment)
+                        setConsultationBusyId(null)
+                      }}
+                      disabled={consultationBusyId !== null}
+                      className="rounded-full bg-[#678739] px-4 py-3 text-xs font-black text-white shadow-md transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {consultationBusyId === selectedAppointment.id ? "Updating..." : "🏠 Mark Arrived"}
+                    </button>
+                  )}
+
+                  {selectedAppointment.status === "arrived" && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setConsultationBusyId(selectedAppointment.id)
+                        await handleConsultationComplete(selectedAppointment)
+                        setConsultationBusyId(null)
+                      }}
+                      disabled={consultationBusyId !== null}
+                      className="rounded-full bg-[#678739] px-4 py-3 text-xs font-black text-white shadow-md transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {consultationBusyId === selectedAppointment.id ? "Updating..." : "✓ Complete Consultation"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 border-t border-[#0A1821]/10 pt-5 text-xs font-semibold text-[#0A1821]/45">
+              Customer ID: {selectedCustomer.id}
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A1821]/45 p-4">
@@ -3721,6 +3936,25 @@ export default function AdminDashboard() {
                     Gate is closed and secured
                   </label>
 
+                  <label className="mt-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={simulatePaymentFailure}
+                      onChange={(event) =>
+                        setSimulatePaymentFailure(event.target.checked)
+                      }
+                      disabled={jobActionBusy}
+                      className="mt-0.5 h-4 w-4 accent-red-600"
+                    />
+                    <span>
+                      <span className="block font-black text-red-800">
+                        Test payment failure (safe)
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-red-700">
+                        This skips Square entirely. It will simulate a failed payment so we can verify the completion workflow without charging a card.
+                      </span>
+                    </span>
+                  </label>
 
                   <button
                     type="button"
