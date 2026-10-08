@@ -111,6 +111,7 @@ export default function AdminDashboard() {
   const [consultationMessage, setConsultationMessage] = useState(
     ""
   )
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | null>(null)
 
   const [newDate, setNewDate] = useState("")
   const [newTime, setNewTime] = useState("")
@@ -130,6 +131,8 @@ export default function AdminDashboard() {
   const [recurringStartDate, setRecurringStartDate] = useState("")
   const [recurringStatus, setRecurringStatus] = useState("active")
   const [recurringNotes, setRecurringNotes] = useState("")
+  const [activationDay, setActivationDay] = useState("")
+  const [activationTime, setActivationTime] = useState("")
   const [recurringBusy, setRecurringBusy] = useState(false)
   const [paymentSetupBusy, setPaymentSetupBusy] = useState(false)
 
@@ -145,10 +148,7 @@ export default function AdminDashboard() {
   const [calendarView, setCalendarView] = useState<"week" | "month">("week")
   const [jobsBusy, setJobsBusy] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
-  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null)
-  const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | null>(null)
   const [jobActionBusy, setJobActionBusy] = useState(false)
-  const [simulatePaymentFailure, setSimulatePaymentFailure] = useState(false)
   const [completionPhoto, setCompletionPhoto] = useState<File | null>(null)
   const [completionGateClosed, setCompletionGateClosed] = useState(false)
 
@@ -193,8 +193,7 @@ export default function AdminDashboard() {
       supabase
         .from("customers")
         .select("*")
-        .order("id", { ascending: false })
-        .limit(10),
+        .order("id", { ascending: false }),
 
       supabase
         .from("appointments")
@@ -250,8 +249,7 @@ export default function AdminDashboard() {
       supabase
         .from("customer_services")
         .select("*")
-        .order("id", { ascending: false })
-        .limit(50),
+        .order("id", { ascending: false }),
 
       supabase
         .from("recurring_schedules")
@@ -476,6 +474,11 @@ export default function AdminDashboard() {
 
     if (latestAppointment) {
       setQuoteAppointmentId(String(latestAppointment.id))
+
+      const requestedService = latestAppointment.notes?.split(" | ")[0]?.trim() || ""
+      if (requestedService) {
+        setQuoteFrequency(requestedService)
+      }
     }
 
     const existingQuote = quotes.find(
@@ -491,7 +494,11 @@ export default function AdminDashboard() {
           ? String(existingQuote.quoted_price)
           : ""
       )
-      setQuoteFrequency(existingQuote.service_frequency || "")
+      setQuoteFrequency(
+        existingQuote.service_frequency ||
+          latestAppointment?.notes?.split(" | ")[0]?.trim() ||
+          ""
+      )
       setQuoteStatus(existingQuote.status || "pending")
       setQuoteNotes(existingQuote.notes || "")
       setQuoteAppointmentId(String(existingQuote.appointment_id))
@@ -511,12 +518,24 @@ export default function AdminDashboard() {
           ? String(existingQuote.quoted_price)
           : ""
       )
-      setQuoteFrequency(existingQuote.service_frequency || "")
+      const selectedAppointment = appointments.find(
+        (appointment) => appointment.id === Number(appointmentId)
+      )
+      setQuoteFrequency(
+        existingQuote.service_frequency ||
+          selectedAppointment?.notes?.split(" | ")[0]?.trim() ||
+          ""
+      )
       setQuoteStatus(existingQuote.status || "pending")
       setQuoteNotes(existingQuote.notes || "")
     } else {
       setQuotePrice("")
-      setQuoteFrequency("")
+      const selectedAppointment = appointments.find(
+        (appointment) => appointment.id === Number(appointmentId)
+      )
+      setQuoteFrequency(
+        selectedAppointment?.notes?.split(" | ")[0]?.trim() || ""
+      )
       setQuoteStatus("pending")
       setQuoteNotes("")
     }
@@ -621,6 +640,8 @@ export default function AdminDashboard() {
 
   const handleRecurringCustomerSelection = (customerId: string) => {
     setRecurringCustomerId(customerId)
+    setActivationDay("")
+    setActivationTime("")
 
     const acceptedQuote = quotes.find(
       (quote) =>
@@ -653,6 +674,21 @@ export default function AdminDashboard() {
         : ""
     )
 
+    // Start the recurring service on the accepted quote date when available.
+    // If the customer already has an active recurring service, that existing
+    // service's start date below will take precedence.
+    const acceptedQuoteDate = acceptedQuote.accepted_at
+      ? new Date(acceptedQuote.accepted_at)
+      : new Date()
+
+    const localAcceptedDate = new Date(
+      acceptedQuoteDate.getTime() - acceptedQuoteDate.getTimezoneOffset() * 60000
+    )
+      .toISOString()
+      .slice(0, 10)
+
+    setRecurringStartDate(localAcceptedDate)
+
     const existingService = customerServices.find(
       (service) =>
         service.customer_id === Number(customerId) &&
@@ -665,6 +701,19 @@ export default function AdminDashboard() {
       setRecurringStartDate(existingService.start_date || "")
       setRecurringStatus(existingService.status || "active")
       setRecurringNotes(existingService.notes || "")
+
+      const existingSchedule = recurringSchedules
+        .filter(
+          (schedule) =>
+            schedule.customer_service_id === existingService.id &&
+            schedule.active
+        )
+        .sort((a, b) => a.id - b.id)[0]
+
+      if (existingSchedule) {
+        setActivationDay(String(existingSchedule.day_of_week))
+        setActivationTime(existingSchedule.service_time.slice(0, 5))
+      }
     } else {
       const today = new Date()
       const localToday = new Date(
@@ -792,7 +841,7 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleSaveRecurringService = async (
+  const handleActivateRecurringCustomer = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault()
@@ -801,10 +850,12 @@ export default function AdminDashboard() {
       !recurringCustomerId ||
       !recurringServiceId ||
       !recurringPrice ||
-      !recurringStartDate
+      !recurringStartDate ||
+      activationDay === "" ||
+      !activationTime
     ) {
       setErrorMessage(
-        "Please choose a customer, service, agreed price, and start date."
+        "Please choose a customer, service, agreed price, start date, service day, and service time."
       )
       return
     }
@@ -829,14 +880,14 @@ export default function AdminDashboard() {
       return
     }
 
-    const hasAcceptedQuote = quotes.some(
+    const acceptedQuote = quotes.find(
       (quote) =>
         quote.customer_id === selectedCustomer.id &&
         quote.status === "accepted" &&
         quote.service_frequency === selectedService.frequency
     )
 
-    if (!hasAcceptedQuote) {
+    if (!acceptedQuote) {
       setErrorMessage(
         "This customer must have an accepted quote for the selected recurring service before setup."
       )
@@ -864,7 +915,7 @@ export default function AdminDashboard() {
     }
 
     const existingActiveService = activeServices?.[0]
-
+    let customerServiceId: number
     let serviceError = null
 
     if (existingActiveService) {
@@ -874,23 +925,38 @@ export default function AdminDashboard() {
           service_id: selectedService.id,
           agreed_price: price,
           start_date: recurringStartDate,
-          status: recurringStatus,
+          status: "active",
           notes: recurringNotes || null,
         })
         .eq("id", existingActiveService.id)
 
       serviceError = error
+      customerServiceId = existingActiveService.id
     } else {
-      const { error } = await supabase.from("customer_services").insert({
-        customer_id: selectedCustomer.id,
-        service_id: selectedService.id,
-        agreed_price: price,
-        start_date: recurringStartDate,
-        status: recurringStatus,
-        notes: recurringNotes || null,
-      })
+      const { data: newService, error } = await supabase
+        .from("customer_services")
+        .insert({
+          customer_id: selectedCustomer.id,
+          service_id: selectedService.id,
+          agreed_price: price,
+          start_date: recurringStartDate,
+          status: "active",
+          notes: recurringNotes || null,
+        })
+        .select("id")
+        .single()
 
       serviceError = error
+
+      if (!newService) {
+        setErrorMessage(
+          "We couldn't create the recurring service. Please try again."
+        )
+        setRecurringBusy(false)
+        return
+      }
+
+      customerServiceId = newService.id
     }
 
     if (serviceError) {
@@ -907,9 +973,8 @@ export default function AdminDashboard() {
       .update({
         service_frequency: selectedService.frequency,
         recurring_price: price,
-        status: recurringStatus === "active" ? "active" : recurringStatus,
-        customer_since:
-          recurringStatus === "active" ? recurringStartDate : null,
+        status: "active",
+        customer_since: recurringStartDate,
       })
       .eq("id", selectedCustomer.id)
 
@@ -923,11 +988,74 @@ export default function AdminDashboard() {
       return
     }
 
-    await loadDashboard()
+    const { data: existingSchedules, error: scheduleLookupError } =
+      await supabase
+        .from("recurring_schedules")
+        .select("*")
+        .eq("customer_service_id", customerServiceId)
+        .eq("active", true)
+        .order("id", { ascending: true })
 
+    if (scheduleLookupError) {
+      console.error("Check recurring schedule error:", scheduleLookupError)
+      setErrorMessage(
+        "The recurring customer was activated, but we couldn't check the service schedule."
+      )
+      setRecurringBusy(false)
+      await loadDashboard()
+      return
+    }
+
+    const schedulePayload = {
+      day_of_week: Number(activationDay),
+      service_time: activationTime,
+      active: true,
+      notes: recurringNotes || null,
+    }
+
+    let scheduleError = null
+
+    if (existingSchedules && existingSchedules.length > 0) {
+      const { error } = await supabase
+        .from("recurring_schedules")
+        .update(schedulePayload)
+        .eq("id", existingSchedules[0].id)
+
+      scheduleError = error
+    } else {
+      const { error } = await supabase
+        .from("recurring_schedules")
+        .insert({
+          customer_service_id: customerServiceId,
+          ...schedulePayload,
+        })
+
+      scheduleError = error
+    }
+
+    if (scheduleError) {
+      console.error("Save recurring schedule error:", scheduleError)
+      setErrorMessage(
+        "The recurring customer was activated, but the service schedule could not be saved."
+      )
+      setRecurringBusy(false)
+      await loadDashboard()
+      return
+    }
+
+    setScheduleCustomerServiceId(String(customerServiceId))
+    setScheduleDay(activationDay)
+    setScheduleTime(activationTime)
+    setScheduleNotes(recurringNotes)
+
+    await loadDashboard()
     setRecurringBusy(false)
 
-    alert("Recurring service saved successfully.")
+    alert(
+      `${selectedCustomer.first_name} ${selectedCustomer.last_name} is now an active recurring customer.\n\n` +
+        `${selectedService.name} is scheduled for ${dayNames[Number(activationDay)]} at ${formatServiceTime(activationTime)}.\n\n` +
+        "Next step: send the customer their secure payment setup link."
+    )
   }
 
   const handleStopService = async (customerService: CustomerService) => {
@@ -1403,6 +1531,14 @@ export default function AdminDashboard() {
     )
   }
 
+  const getCustomerForAppointment = (appointment: Appointment): Customer | null => {
+    return (
+      customers.find((customer) => customer.id === appointment.customer_id) ||
+      getCustomerForAppointment(appointment) ||
+      null
+    )
+  }
+
   const getServiceForJob = (job: Job) => {
     const customerService = customerServices.find(
       (service) => service.id === job.customer_service_id
@@ -1421,24 +1557,6 @@ export default function AdminDashboard() {
     selectedJobId === null
       ? null
       : jobs.find((job) => job.id === selectedJobId) || null
-
-  const selectedCustomer =
-    selectedCustomerId === null
-      ? null
-      : customers.find((customer) => customer.id === selectedCustomerId) || null
-
-  const selectedAppointment =
-    selectedAppointmentId === null
-      ? null
-      : appointments.find((appointment) => appointment.id === selectedAppointmentId) || null
-
-  const selectedAppointmentQuote = selectedAppointment
-    ? quotes.find(
-        (quote) =>
-          quote.customer_id === selectedAppointment.customer_id &&
-          quote.appointment_id === selectedAppointment.id
-      ) || null
-    : null
 
   const sendCustomerJobNotification = async (
     jobId: number,
@@ -1641,18 +1759,7 @@ export default function AdminDashboard() {
     )
   }
 
-  const chargeCompletedJob = async (
-    jobId: number,
-    shouldSimulateFailure = false
-  ) => {
-    if (shouldSimulateFailure) {
-      return {
-        success: false,
-        error:
-          "SIMULATED PAYMENT FAILURE: Square could not process the payment. No Square charge was made and no payment record was created.",
-      }
-    }
-
+  const chargeCompletedJob = async (jobId: number) => {
     try {
       const { data: sessionData, error: sessionError } =
         await supabase.auth.getSession()
@@ -1875,10 +1982,7 @@ export default function AdminDashboard() {
     // A payment failure does NOT undo the completed job.
     // ------------------------------------------------------------
 
-    const paymentResult = await chargeCompletedJob(
-      job.id,
-      simulatePaymentFailure
-    )
+    const paymentResult = await chargeCompletedJob(job.id)
 
     // ------------------------------------------------------------
     // 4. Send completed-service customer email
@@ -1895,7 +1999,6 @@ export default function AdminDashboard() {
 
     setCompletionPhoto(null)
     setCompletionGateClosed(false)
-    setSimulatePaymentFailure(false)
     setSelectedJobId(null)
 
     await loadDashboard()
@@ -1989,27 +2092,6 @@ export default function AdminDashboard() {
     setCompletionPhoto(null)
     setCompletionGateClosed(job.gate_closed)
     setErrorMessage("")
-  }
-
-  const handleCustomerClick = (customer: Customer) => {
-    setSelectedCustomerId(customer.id)
-    setSelectedAppointmentId(null)
-    setSelectedJobId(null)
-    setErrorMessage("")
-  }
-
-  const handleAppointmentClick = (appointment: Appointment) => {
-    setSelectedAppointmentId(appointment.id)
-    setSelectedCustomerId(appointment.customer_id)
-    setSelectedJobId(null)
-    setErrorMessage("")
-  }
-
-  const closeCustomerDetails = () => {
-    if (consultationBusyId !== null) return
-
-    setSelectedCustomerId(null)
-    setSelectedAppointmentId(null)
   }
 
   const closeJobDetails = () => {
@@ -2383,14 +2465,14 @@ export default function AdminDashboard() {
 
                           <div className="space-y-2 p-2">
                             {dayAppointments.map((appointment) => {
-                              const customer = appointment.customer?.[0]
+                              const customer = getCustomerForAppointment(appointment)
 
                               return (
                                 <button
                                   type="button"
                                   key={`appointment-${appointment.id}`}
-                                  onClick={() => handleAppointmentClick(appointment)}
-                                  className="w-full rounded-xl border border-[#0A1821]/10 bg-[#F7F7F7] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#678739]/45 hover:shadow-sm"
+                                  onClick={() => setSelectedAppointmentId(appointment.id)}
+                                  className="w-full rounded-xl border border-[#0A1821]/10 bg-[#F7F7F7] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#0A1821]/25 hover:shadow-sm"
                                 >
                                   <p className="text-[11px] font-black uppercase tracking-wide text-[#0A1821]/45">
                                     Consultation
@@ -2520,12 +2602,14 @@ export default function AdminDashboard() {
 
                           <div className="mt-2 space-y-1.5">
                             {dayAppointments.slice(0, 3).map((appointment) => {
-                              const customer = appointment.customer?.[0]
+                              const customer = getCustomerForAppointment(appointment)
 
                               return (
-                                <div
+                                <button
+                                  type="button"
                                   key={`month-appointment-${appointment.id}`}
-                                  className="rounded-lg bg-[#F4F4F4] px-2 py-1.5"
+                                  onClick={() => setSelectedAppointmentId(appointment.id)}
+                                  className="w-full rounded-lg bg-[#F4F4F4] px-2 py-1.5 text-left transition hover:bg-[#EDEDED]"
                                 >
                                   <p className="truncate text-[10px] font-black">
                                     {new Date(
@@ -2537,7 +2621,7 @@ export default function AdminDashboard() {
                                     ·{" "}
                                     {customer?.first_name || "Consultation"}
                                   </p>
-                                </div>
+                                </button>
                               )
                             })}
 
@@ -2610,12 +2694,21 @@ export default function AdminDashboard() {
                     </div>
                   ) : (
                     upcomingAppointments.map((appointment) => {
-                      const customer = appointment.customer?.[0] || null
+                      const customer = getCustomerForAppointment(appointment)
 
                       return (
                         <div
                           key={appointment.id}
-                          className="rounded-2xl border border-[#0A1821]/10 bg-[#FEFBF7] p-5"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedAppointmentId(appointment.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault()
+                              setSelectedAppointmentId(appointment.id)
+                            }
+                          }}
+                          className="w-full cursor-pointer rounded-2xl border border-[#0A1821]/10 bg-[#FEFBF7] p-5 text-left transition hover:border-[#0A1821]/25 hover:shadow-sm"
                         >
                           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                             <div>
@@ -3085,8 +3178,8 @@ export default function AdminDashboard() {
                   </h2>
 
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-[#0A1821]/60">
-                    Set up the customer&apos;s ongoing service after they accept
-                    their quote.
+                    Activate the customer&apos;s ongoing service, first service day,
+                    and first service time after they accept their quote.
                   </p>
                 </div>
 
@@ -3099,7 +3192,7 @@ export default function AdminDashboard() {
               </div>
 
               <form
-                onSubmit={handleSaveRecurringService}
+                onSubmit={handleActivateRecurringCustomer}
                 className="mt-6 space-y-5"
               >
                 <div>
@@ -3194,7 +3287,7 @@ export default function AdminDashboard() {
                       onChange={(event) =>
                         setRecurringPrice(event.target.value)
                       }
-                      placeholder="18.00"
+                      placeholder="20.00"
                       required
                       disabled={!recurringCustomerId}
                       className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15 disabled:bg-[#F5F5F5]"
@@ -3226,25 +3319,48 @@ export default function AdminDashboard() {
 
                   <div>
                     <label
-                      htmlFor="recurring-status"
+                      htmlFor="recurring-day"
                       className="mb-2 block text-sm font-extrabold"
                     >
-                      Status
+                      First Service Day
                     </label>
 
                     <select
-                      id="recurring-status"
-                      value={recurringStatus}
-                      onChange={(event) =>
-                        setRecurringStatus(event.target.value)
-                      }
+                      id="recurring-day"
+                      value={activationDay}
+                      onChange={(event) => setActivationDay(event.target.value)}
+                      required
                       disabled={!recurringCustomerId}
                       className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15 disabled:bg-[#F5F5F5]"
                     >
-                      <option value="active">Active</option>
-                      <option value="paused">Paused</option>
-                      <option value="cancelled">Cancelled</option>
+                      <option value="" disabled>
+                        Select day
+                      </option>
+                      {dayNames.map((day, index) => (
+                        <option key={day} value={index}>
+                          {day}
+                        </option>
+                      ))}
                     </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="recurring-time"
+                      className="mb-2 block text-sm font-extrabold"
+                    >
+                      First Service Time
+                    </label>
+
+                    <input
+                      id="recurring-time"
+                      type="time"
+                      value={activationTime}
+                      onChange={(event) => setActivationTime(event.target.value)}
+                      required
+                      disabled={!recurringCustomerId}
+                      className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3.5 outline-none transition focus:border-[#678739] focus:ring-2 focus:ring-[#678739]/15 disabled:bg-[#F5F5F5]"
+                    />
                   </div>
                 </div>
 
@@ -3273,8 +3389,9 @@ export default function AdminDashboard() {
                   <span className="font-black text-[#536f2e]">
                     First Cleanup:
                   </span>{" "}
-                  The free initial cleanup is tracked separately and is not
-                  automatically marked as used here.
+                  The free initial cleanup is still tracked separately. It will
+                  be applied automatically when the first completed job is
+                  processed.
                 </div>
 
                 <button
@@ -3286,8 +3403,8 @@ export default function AdminDashboard() {
                   className="w-full rounded-full bg-[#678739] px-5 py-3.5 text-sm font-black text-white shadow-md transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {recurringBusy
-                    ? "Saving Recurring Service..."
-                    : "Save Recurring Service"}
+                    ? "Activating Customer..."
+                    : "Activate Recurring Customer"}
                 </button>
 
                 <button
@@ -3403,7 +3520,7 @@ export default function AdminDashboard() {
                   </h2>
 
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-[#0A1821]/60">
-                    Assign the regular day and time for an active recurring customer. Weekly and every-other-week services use one schedule; twice-weekly services can use two.
+                    Activation creates the first recurring schedule automatically. Use this section to adjust it or add the second weekly schedule for twice-weekly customers.
                   </p>
                 </div>
 
@@ -3638,14 +3755,8 @@ export default function AdminDashboard() {
                         key={customer.id}
                         className="border-b border-[#0A1821]/5 last:border-0"
                       >
-                        <td className="py-4 pr-4">
-                          <button
-                            type="button"
-                            onClick={() => handleCustomerClick(customer)}
-                            className="text-left font-black underline-offset-4 transition hover:text-[#678739] hover:underline"
-                          >
-                            {customer.first_name} {customer.last_name}
-                          </button>
+                        <td className="py-4 pr-4 font-black">
+                          {customer.first_name} {customer.last_name}
                         </td>
 
                         <td className="py-4 pr-4 text-sm">
@@ -3680,156 +3791,6 @@ export default function AdminDashboard() {
           </>
         )}
       </div>
-
-      {selectedCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A1821]/45 p-4">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="font-extrabold uppercase tracking-[0.15em] text-[#678739]">
-                  Customer Details
-                </p>
-                <h2 className="mt-2 text-2xl font-black">
-                  {selectedCustomer.first_name} {selectedCustomer.last_name}
-                </h2>
-                <p className="mt-1 text-sm font-bold uppercase text-[#536f2e]">
-                  {selectedCustomer.status}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={closeCustomerDetails}
-                disabled={consultationBusyId !== null}
-                className="rounded-full border border-[#0A1821]/10 px-3 py-1.5 text-lg font-black text-[#0A1821]/60 hover:text-[#0A1821] disabled:opacity-50"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-[#0A1821]/10 bg-[#FEFBF7] p-4">
-                <p className="text-[11px] font-black uppercase tracking-wide text-[#0A1821]/45">Contact</p>
-                <p className="mt-2 font-black">{selectedCustomer.phone || "—"}</p>
-                <p className="mt-1 break-all text-sm text-[#0A1821]/60">{selectedCustomer.email || "No email on file"}</p>
-              </div>
-
-              <div className="rounded-2xl border border-[#0A1821]/10 bg-[#FEFBF7] p-4">
-                <p className="text-[11px] font-black uppercase tracking-wide text-[#0A1821]/45">Dogs</p>
-                <p className="mt-2 font-black">{selectedCustomer.number_of_dogs ?? "—"}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-[#0A1821]/10 bg-[#F1F5EA] p-4">
-              <p className="text-[11px] font-black uppercase tracking-wide text-[#536f2e]">Property</p>
-              <p className="mt-2 font-black">{selectedCustomer.address || "Address unavailable"}</p>
-              <p className="mt-1 text-sm font-semibold text-[#0A1821]/60">ZIP Code: {selectedCustomer.zip_code || "—"}</p>
-            </div>
-
-            {selectedCustomer.notes && (
-              <div className="mt-4 rounded-2xl border border-[#0A1821]/10 bg-white p-4">
-                <p className="text-[11px] font-black uppercase tracking-wide text-[#0A1821]/45">Customer / Property Notes</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#0A1821]/70">{selectedCustomer.notes}</p>
-              </div>
-            )}
-
-            {selectedAppointment && (
-              <div className="mt-6 border-t border-[#0A1821]/10 pt-6">
-                <p className="font-extrabold uppercase tracking-[0.15em] text-[#678739]">
-                  Consultation
-                </p>
-                <div className="mt-3 rounded-2xl bg-[#F7F7F7] p-4">
-                  <p className="font-black">
-                    {formatJobDateTime(selectedAppointment.scheduled_at)}
-                  </p>
-                  <p className="mt-1 text-sm font-bold uppercase text-[#536f2e]">
-                    Status: {selectedAppointment.status.replace("_", " ")}
-                  </p>
-                  {selectedAppointment.notes && (
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#0A1821]/65">
-                      {selectedAppointment.notes}
-                    </p>
-                  )}
-                </div>
-
-                {selectedAppointmentQuote ? (
-                  <div className="mt-3 rounded-2xl border border-[#678739]/20 bg-[#F1F5EA] p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <p className="text-[11px] font-black uppercase tracking-wide text-[#536f2e]">Quote</p>
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-black uppercase text-[#536f2e]">
-                        {selectedAppointmentQuote.status}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xl font-black">
-                      {selectedAppointmentQuote.quoted_price !== null
-                        ? `$${Number(selectedAppointmentQuote.quoted_price).toFixed(2)}`
-                        : "Custom / not set"}
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-[#0A1821]/60">
-                      {formatFrequency(selectedAppointmentQuote.service_frequency)}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="mt-3 rounded-2xl bg-white p-4 text-sm font-semibold text-[#0A1821]/50">
-                    No quote has been created for this consultation yet.
-                  </div>
-                )}
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  {selectedAppointment.status === "scheduled" && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setConsultationBusyId(selectedAppointment.id)
-                        await handleConsultationStartTrip(selectedAppointment)
-                        setConsultationBusyId(null)
-                      }}
-                      disabled={consultationBusyId !== null}
-                      className="rounded-full bg-[#678739] px-4 py-3 text-xs font-black text-white shadow-md transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {consultationBusyId === selectedAppointment.id ? "Updating..." : "🚗 Start Trip"}
-                    </button>
-                  )}
-
-                  {selectedAppointment.status === "on_the_way" && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setConsultationBusyId(selectedAppointment.id)
-                        await handleConsultationArrive(selectedAppointment)
-                        setConsultationBusyId(null)
-                      }}
-                      disabled={consultationBusyId !== null}
-                      className="rounded-full bg-[#678739] px-4 py-3 text-xs font-black text-white shadow-md transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {consultationBusyId === selectedAppointment.id ? "Updating..." : "🏠 Mark Arrived"}
-                    </button>
-                  )}
-
-                  {selectedAppointment.status === "arrived" && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setConsultationBusyId(selectedAppointment.id)
-                        await handleConsultationComplete(selectedAppointment)
-                        setConsultationBusyId(null)
-                      }}
-                      disabled={consultationBusyId !== null}
-                      className="rounded-full bg-[#678739] px-4 py-3 text-xs font-black text-white shadow-md transition hover:bg-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {consultationBusyId === selectedAppointment.id ? "Updating..." : "✓ Complete Consultation"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-6 border-t border-[#0A1821]/10 pt-5 text-xs font-semibold text-[#0A1821]/45">
-              Customer ID: {selectedCustomer.id}
-            </div>
-          </div>
-        </div>
-      )}
 
       {selectedJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A1821]/45 p-4">
@@ -3936,25 +3897,6 @@ export default function AdminDashboard() {
                     Gate is closed and secured
                   </label>
 
-                  <label className="mt-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={simulatePaymentFailure}
-                      onChange={(event) =>
-                        setSimulatePaymentFailure(event.target.checked)
-                      }
-                      disabled={jobActionBusy}
-                      className="mt-0.5 h-4 w-4 accent-red-600"
-                    />
-                    <span>
-                      <span className="block font-black text-red-800">
-                        Test payment failure (safe)
-                      </span>
-                      <span className="mt-1 block text-xs leading-5 text-red-700">
-                        This skips Square entirely. It will simulate a failed payment so we can verify the completion workflow without charging a card.
-                      </span>
-                    </span>
-                  </label>
 
                   <button
                     type="button"
@@ -3987,6 +3929,58 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+      {selectedAppointmentId !== null && (() => {
+        const selectedAppointment = appointments.find(
+          (appointment) => appointment.id === selectedAppointmentId
+        )
+        const selectedCustomer = selectedAppointment
+          ? getCustomerForAppointment(selectedAppointment)
+          : null
+
+        if (!selectedAppointment) return null
+
+        const requestedService =
+          selectedAppointment.notes?.split(" | ")[0]?.trim() || "Not specified"
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A1821]/50 p-5"
+            onClick={() => setSelectedAppointmentId(null)}
+          >
+            <div
+              className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-extrabold uppercase tracking-[0.15em] text-[#678739]">Consultation Details</p>
+                  <h2 className="mt-2 text-2xl font-black">
+                    {selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}` : "Customer"}
+                  </h2>
+                  <p className="mt-1 font-bold text-[#678739]">{formatDateTime(selectedAppointment.scheduled_at)}</p>
+                </div>
+                <button type="button" onClick={() => setSelectedAppointmentId(null)} className="rounded-full border border-[#0A1821]/15 px-4 py-2 text-sm font-black hover:border-[#678739] hover:text-[#678739]">Close</button>
+              </div>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl bg-[#F1F5EA] p-4"><p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">Requested Service</p><p className="mt-1 font-black">{formatFrequency(requestedService)}</p></div>
+                <div className="rounded-2xl bg-[#F1F5EA] p-4"><p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">Number of Dogs</p><p className="mt-1 font-black">{selectedCustomer?.number_of_dogs ?? "—"}</p></div>
+                <div className="rounded-2xl bg-[#F1F5EA] p-4 sm:col-span-2"><p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">Address</p><p className="mt-1 font-black">{selectedCustomer?.address || "No address on file"}</p><p className="mt-1 text-sm font-semibold text-[#0A1821]/60">ZIP: {selectedCustomer?.zip_code || "—"}</p></div>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div><p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">Phone</p><p className="mt-1 font-bold">{selectedCustomer?.phone || "—"}</p></div>
+                <div><p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">Email</p><p className="mt-1 break-all font-bold">{selectedCustomer?.email || "—"}</p></div>
+              </div>
+              {selectedAppointment.notes && <div className="mt-6 rounded-2xl border border-[#0A1821]/10 p-4"><p className="text-xs font-extrabold uppercase tracking-wide text-[#0A1821]/45">Consultation Notes</p><p className="mt-2 text-sm leading-6 text-[#0A1821]/70">{selectedAppointment.notes}</p></div>}
+              <div className="mt-6 flex flex-wrap gap-3">
+                {selectedAppointment.status === "scheduled" && <button type="button" onClick={() => { setSelectedAppointmentId(null); handleConsultationStartTrip(selectedAppointment) }} disabled={consultationBusyId === selectedAppointment.id} className="rounded-full bg-[#678739] px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60">On My Way</button>}
+                {selectedAppointment.status === "on_the_way" && <button type="button" onClick={() => { setSelectedAppointmentId(null); handleConsultationArrive(selectedAppointment) }} disabled={consultationBusyId === selectedAppointment.id} className="rounded-full bg-[#0A1821] px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60">Arrived</button>}
+                {selectedAppointment.status === "arrived" && <button type="button" onClick={() => { setSelectedAppointmentId(null); handleConsultationComplete(selectedAppointment) }} disabled={consultationBusyId === selectedAppointment.id} className="rounded-full border border-[#678739] bg-white px-5 py-3 text-sm font-black text-[#536f2e] disabled:cursor-not-allowed disabled:opacity-60">Consultation Complete</button>}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
     </main>
   )
 }

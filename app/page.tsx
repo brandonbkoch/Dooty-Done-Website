@@ -467,6 +467,8 @@ export default function Home() {
 
 
   const [selectedTime, setSelectedTime] = useState("")
+  const [submissionComplete, setSubmissionComplete] = useState(false)
+  const [confirmationEmail, setConfirmationEmail] = useState("")
 
 
 
@@ -1067,7 +1069,8 @@ const nameParts = name.split(/\s+/)
 
 
 
-      alert("Thank you! Your free quote request has been submitted.")
+      setConfirmationEmail(email)
+      setSubmissionComplete(true)
 
 
 
@@ -4259,7 +4262,36 @@ const nameParts = name.split(/\s+/)
 
 
 
-              <form
+              {submissionComplete ? (
+      <div className="rounded-3xl border border-[#A4C36B]/30 bg-[#FEFBF7] p-8 text-[#0A1821] shadow-xl sm:p-10">
+        <div className="mx-auto max-w-2xl text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#678739] text-3xl text-white shadow-md">
+            ✓
+          </div>
+          <h3 className="mt-6 text-3xl font-black tracking-tight sm:text-4xl">
+            You&apos;re All Set! 🎉
+          </h3>
+          <p className="mt-4 text-lg leading-8 text-[#0A1821]/75">
+            Your consultation request has been received.
+          </p>
+          <div className="mt-6 rounded-2xl border border-[#678739]/20 bg-white p-5 text-left">
+            <p className="text-base leading-7">
+              We&apos;ve sent a confirmation email to <strong>{confirmationEmail}</strong> with your consultation details.
+            </p>
+            <p className="mt-3 text-sm leading-6 text-[#0A1821]/60">
+              If you don&apos;t see the email, please check your spam or junk folder.
+            </p>
+          </div>
+          <div className="mt-6 rounded-2xl bg-[#678739] p-5 text-left text-white">
+            <p className="font-black">We&apos;ll be in contact with you soon.</p>
+            <p className="mt-2 text-sm leading-6 text-white/85">
+              We&apos;ll meet you at your scheduled consultation, take a look at the yard, and go over your service options and quote.
+            </p>
+          </div>
+        </div>
+      </div>
+    ) : (
+      <form
 
 
 
@@ -5589,6 +5621,7 @@ const nameParts = name.split(/\s+/)
 
 
               </form>
+    )}
 
 
 
