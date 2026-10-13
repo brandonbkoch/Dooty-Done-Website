@@ -18,6 +18,7 @@ type Customer = {
   status: string
   notes: string | null
   customer_since?: string | null
+  free_cleanup_choice?: "today" | "later" | "declined" | null
 }
 
 type Appointment = {
@@ -131,6 +132,7 @@ export default function AdminDashboard() {
   const [recurringStartDate, setRecurringStartDate] = useState("")
   const [recurringStatus, setRecurringStatus] = useState("active")
   const [recurringNotes, setRecurringNotes] = useState("")
+  const [recurringFreeCleanupChoice, setRecurringFreeCleanupChoice] = useState<"today" | "later" | "declined" | "">("")
   const [activationDay, setActivationDay] = useState("")
   const [activationTime, setActivationTime] = useState("")
   const [recurringBusy, setRecurringBusy] = useState(false)
@@ -640,6 +642,10 @@ export default function AdminDashboard() {
 
   const handleRecurringCustomerSelection = (customerId: string) => {
     setRecurringCustomerId(customerId)
+    const selectedCustomer = customers.find(
+      (customer) => customer.id === Number(customerId)
+    )
+    setRecurringFreeCleanupChoice(selectedCustomer?.free_cleanup_choice || "")
     setActivationDay("")
     setActivationTime("")
 
@@ -846,6 +852,13 @@ export default function AdminDashboard() {
   ) => {
     event.preventDefault()
 
+    if (!recurringFreeCleanupChoice) {
+      setErrorMessage(
+        "Please choose what to do with the customer's free first cleanup."
+      )
+      return
+    }
+
     if (
       !recurringCustomerId ||
       !recurringServiceId ||
@@ -975,6 +988,7 @@ export default function AdminDashboard() {
         recurring_price: price,
         status: "active",
         customer_since: recurringStartDate,
+        free_cleanup_choice: recurringFreeCleanupChoice,
       })
       .eq("id", selectedCustomer.id)
 
@@ -1531,10 +1545,12 @@ export default function AdminDashboard() {
     )
   }
 
-  const getCustomerForAppointment = (appointment: Appointment): Customer | null => {
+  // Prefer the full customers query keyed by customer_id. The nested Supabase
+  // relationship can be empty even when the customer record exists.
+  const getCustomerForAppointment = (appointment: Appointment) => {
     return (
       customers.find((customer) => customer.id === appointment.customer_id) ||
-      getCustomerForAppointment(appointment) ||
+      appointment.customer?.[0] ||
       null
     )
   }
@@ -2694,7 +2710,7 @@ export default function AdminDashboard() {
                     </div>
                   ) : (
                     upcomingAppointments.map((appointment) => {
-                      const customer = getCustomerForAppointment(appointment)
+                      const customer = getCustomerForAppointment(appointment) || null
 
                       return (
                         <div
@@ -3385,13 +3401,81 @@ export default function AdminDashboard() {
                   />
                 </div>
 
-                <div className="rounded-2xl bg-[#F1F5EA] p-4 text-sm leading-6 text-[#0A1821]/65">
-                  <span className="font-black text-[#536f2e]">
-                    First Cleanup:
-                  </span>{" "}
-                  The free initial cleanup is still tracked separately. It will
-                  be applied automatically when the first completed job is
-                  processed.
+                <div className="rounded-2xl border border-[#678739]/20 bg-[#F1F5EA] p-5">
+                  <div className="mb-1 text-base font-black text-[#0A1821]">
+                    First Cleanup
+                  </div>
+                  <p className="mb-4 text-sm leading-6 text-[#0A1821]/65">
+                    How should we handle this customer&apos;s free first cleanup?
+                  </p>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <label
+                      className={`cursor-pointer rounded-2xl border p-4 transition ${
+                        recurringFreeCleanupChoice === "today"
+                          ? "border-[#678739] bg-white ring-2 ring-[#678739]/15"
+                          : "border-[#0A1821]/10 bg-white/70 hover:border-[#678739]/40"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="recurring-free-cleanup-choice"
+                        value="today"
+                        checked={recurringFreeCleanupChoice === "today"}
+                        onChange={() => setRecurringFreeCleanupChoice("today")}
+                        disabled={recurringBusy}
+                        className="sr-only"
+                      />
+                      <div className="font-black text-[#0A1821]">Today</div>
+                      <div className="mt-1 text-sm leading-5 text-[#0A1821]/60">
+                        Apply the free cleanup to the first applicable job.
+                      </div>
+                    </label>
+
+                    <label
+                      className={`cursor-pointer rounded-2xl border p-4 transition ${
+                        recurringFreeCleanupChoice === "later"
+                          ? "border-[#678739] bg-white ring-2 ring-[#678739]/15"
+                          : "border-[#0A1821]/10 bg-white/70 hover:border-[#678739]/40"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="recurring-free-cleanup-choice"
+                        value="later"
+                        checked={recurringFreeCleanupChoice === "later"}
+                        onChange={() => setRecurringFreeCleanupChoice("later")}
+                        disabled={recurringBusy}
+                        className="sr-only"
+                      />
+                      <div className="font-black text-[#0A1821]">Later</div>
+                      <div className="mt-1 text-sm leading-5 text-[#0A1821]/60">
+                        Keep the free cleanup available for a future job.
+                      </div>
+                    </label>
+
+                    <label
+                      className={`cursor-pointer rounded-2xl border p-4 transition ${
+                        recurringFreeCleanupChoice === "declined"
+                          ? "border-[#678739] bg-white ring-2 ring-[#678739]/15"
+                          : "border-[#0A1821]/10 bg-white/70 hover:border-[#678739]/40"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="recurring-free-cleanup-choice"
+                        value="declined"
+                        checked={recurringFreeCleanupChoice === "declined"}
+                        onChange={() => setRecurringFreeCleanupChoice("declined")}
+                        disabled={recurringBusy}
+                        className="sr-only"
+                      />
+                      <div className="font-black text-[#0A1821]">Declined</div>
+                      <div className="mt-1 text-sm leading-5 text-[#0A1821]/60">
+                        The customer is declining the free cleanup benefit.
+                      </div>
+                    </label>
+                  </div>
                 </div>
 
                 <button
@@ -3934,7 +4018,9 @@ export default function AdminDashboard() {
           (appointment) => appointment.id === selectedAppointmentId
         )
         const selectedCustomer = selectedAppointment
-          ? getCustomerForAppointment(selectedAppointment)
+          ? customers.find((customer) => customer.id === selectedAppointment.customer_id) ||
+            selectedAppointment.customer?.[0] ||
+            null
           : null
 
         if (!selectedAppointment) return null
