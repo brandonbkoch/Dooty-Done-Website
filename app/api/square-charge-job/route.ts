@@ -191,7 +191,7 @@ export async function POST(request: Request) {
     const { data: customer, error: customerError } = await supabase
       .from("customers")
       .select(
-        "id, first_name, last_name, email, free_initial_cleanup_used, free_initial_cleanup_date"
+        "id, first_name, last_name, email, free_initial_cleanup_used, free_initial_cleanup_date, free_cleanup_choice"
       )
       .eq("id", customerService.customer_id)
       .maybeSingle()
@@ -216,7 +216,19 @@ export async function POST(request: Request) {
     // FIRST CLEANUP FREE
     // ------------------------------------------------------------
 
-    if (customer.free_initial_cleanup_used === false) {
+    // Apply the free cleanup only when it has not already been used and the
+    // customer has not chosen to save it for later or decline it.
+    // A null choice preserves the previous behavior for older customer records
+    // created before the Today / Later / Declined option existed.
+    const freeCleanupChoice = customer.free_cleanup_choice ?? null
+    const freeCleanupIsAllowed =
+      freeCleanupChoice === "today" ||
+      (freeCleanupChoice === null && customer.free_initial_cleanup_used === false)
+
+    if (
+      customer.free_initial_cleanup_used === false &&
+      freeCleanupIsAllowed
+    ) {
       const freeCleanupDate = new Date().toISOString().slice(0, 10)
 
       const { data: claimedCustomer, error: claimError } = await supabase
