@@ -113,6 +113,8 @@ export default function AdminDashboard() {
     ""
   )
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | null>(null)
+  const [completionCleanupAppointment, setCompletionCleanupAppointment] = useState<Appointment | null>(null)
+  const [consultationCleanupChoice, setConsultationCleanupChoice] = useState<"yes" | "no" | "">("")
 
   const [newDate, setNewDate] = useState("")
   const [newTime, setNewTime] = useState("")
@@ -981,6 +983,35 @@ export default function AdminDashboard() {
       return
     }
 
+    // If the customer chooses to use the free cleanup today, only consume the
+    // benefit now when the consultation appointment actually included cleanup.
+    // Otherwise, the payment route can apply the benefit to the first future job.
+    let consultationCleanupAppointmentId: number | null = null
+    let consultationCleanupDate: string | null = null
+
+    if (recurringFreeCleanupChoice === "today" && acceptedQuote.appointment_id) {
+      const { data: consultationAppointment, error: consultationLookupError } =
+        await supabase
+          .from("appointments")
+          .select("id, scheduled_at, cleanup_completed")
+          .eq("id", acceptedQuote.appointment_id)
+          .maybeSingle()
+
+      if (consultationLookupError) {
+        console.error("Check consultation cleanup error:", consultationLookupError)
+        setErrorMessage(
+          "The recurring service was not updated because we couldn't verify whether cleanup happened during the consultation. Please try again."
+        )
+        setRecurringBusy(false)
+        return
+      }
+
+      if (consultationAppointment?.cleanup_completed) {
+        consultationCleanupAppointmentId = consultationAppointment.id
+        consultationCleanupDate = String(consultationAppointment.scheduled_at).slice(0, 10)
+      }
+    }
+
     const customerUpdate = await supabase
       .from("customers")
       .update({
@@ -989,6 +1020,12 @@ export default function AdminDashboard() {
         status: "active",
         customer_since: recurringStartDate,
         free_cleanup_choice: recurringFreeCleanupChoice,
+        ...(consultationCleanupAppointmentId === null
+          ? {}
+          : {
+              free_initial_cleanup_used: true,
+              free_initial_cleanup_date: consultationCleanupDate,
+            }),
       })
       .eq("id", selectedCustomer.id)
 
@@ -1000,6 +1037,19 @@ export default function AdminDashboard() {
       setRecurringBusy(false)
       await loadDashboard()
       return
+    }
+
+    if (consultationCleanupAppointmentId !== null) {
+      const { error: markFreeCleanupError } = await supabase
+        .from("appointments")
+        .update({ free_cleanup_applied: true })
+        .eq("id", consultationCleanupAppointmentId)
+
+      if (markFreeCleanupError) {
+        // The customer benefit is already marked used to prevent a duplicate
+        // free cleanup; report the history-field issue without re-opening it.
+        console.error("Mark consultation free cleanup error:", markFreeCleanupError)
+      }
     }
 
     const { data: existingSchedules, error: scheduleLookupError } =
@@ -1658,7 +1708,8 @@ export default function AdminDashboard() {
 
   const updateAppointmentStatus = async (
     appointment: Appointment,
-    status: "on_the_way" | "arrived" | "completed"
+    status: "on_the_way" | "arrived" | "completed",
+    cleanupCompleted?: boolean
   ) => {
     setConsultationBusyId(appointment.id)
     setConsultationMessage("")
@@ -1666,7 +1717,10 @@ export default function AdminDashboard() {
 
     const { error } = await supabase
       .from("appointments")
-      .update({ status })
+      .update({
+        status,
+        ...(cleanupCompleted === undefined ? {} : { cleanup_completed: cleanupCompleted }),
+      })
       .eq("id", appointment.id)
 
     if (error) {
@@ -1681,7 +1735,11 @@ export default function AdminDashboard() {
     setAppointments((currentAppointments) =>
       currentAppointments.map((currentAppointment) =>
         currentAppointment.id === appointment.id
-          ? { ...currentAppointment, status }
+          ? {
+              ...currentAppointment,
+              status,
+              ...(cleanupCompleted === undefined ? {} : { cleanup_completed: cleanupCompleted }),
+            }
           : currentAppointment
       )
     )
@@ -1751,10 +1809,27 @@ export default function AdminDashboard() {
     )
   }
 
-  const handleConsultationComplete = async (appointment: Appointment) => {
-    const updated = await updateAppointmentStatus(appointment, "completed")
+  const handleConsultationComplete = (appointment: Appointment) => {
+    setConsultationCleanupChoice("")
+    setCompletionCleanupAppointment(appointment)
+    setSelectedAppointmentId(null)
+  }
+
+  const confirmConsultationComplete = async () => {
+    const appointment = completionCleanupAppointment
+    if (!appointment || !consultationCleanupChoice) return
+
+    const cleanupCompleted = consultationCleanupChoice === "yes"
+    const updated = await updateAppointmentStatus(
+      appointment,
+      "completed",
+      cleanupCompleted
+    )
 
     if (!updated) return
+
+    setCompletionCleanupAppointment(null)
+    setConsultationCleanupChoice("")
 
     const notificationSent = await sendCustomerConsultationNotification(
       appointment.id,
@@ -1771,7 +1846,9 @@ export default function AdminDashboard() {
 
     finishConsultationAction(
       appointment.id,
-      "✓ Consultation complete — customer follow-up email sent."
+      cleanupCompleted
+        ? "✓ Consultation complete — yard cleanup recorded and customer follow-up email sent."
+        : "✓ Consultation complete — no yard cleanup recorded and customer follow-up email sent."
     )
   }
 
@@ -4009,6 +4086,25 @@ export default function AdminDashboard() {
                   This job was cancelled.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {completionCleanupAppointment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0A1821]/60 p-5">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+            <p className="font-extrabold uppercase tracking-[0.15em] text-[#678739]">Finish Consultation</p>
+            <h2 className="mt-2 text-2xl font-black">Was the yard cleaned during this consultation?</h2>
+            <p className="mt-2 text-sm leading-6 text-[#0A1821]/65">
+              This records whether cleanup happened today. It does not by itself use the customer’s free initial cleanup benefit.
+            </p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => setConsultationCleanupChoice("yes")} className={`rounded-2xl border px-5 py-4 text-base font-black ${consultationCleanupChoice === "yes" ? "border-[#678739] bg-[#678739] text-white" : "border-[#0A1821]/15 bg-white text-[#0A1821]"}`}>Yes, yard cleaned</button>
+              <button type="button" onClick={() => setConsultationCleanupChoice("no")} className={`rounded-2xl border px-5 py-4 text-base font-black ${consultationCleanupChoice === "no" ? "border-[#678739] bg-[#678739] text-white" : "border-[#0A1821]/15 bg-white text-[#0A1821]"}`}>No cleanup</button>
+            </div>
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button type="button" onClick={() => { setCompletionCleanupAppointment(null); setConsultationCleanupChoice("") }} disabled={consultationBusyId === completionCleanupAppointment.id} className="rounded-full border border-[#0A1821]/15 px-5 py-3 text-sm font-black disabled:opacity-60">Cancel</button>
+              <button type="button" onClick={confirmConsultationComplete} disabled={!consultationCleanupChoice || consultationBusyId === completionCleanupAppointment.id} className="rounded-full bg-[#678739] px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">{consultationBusyId === completionCleanupAppointment.id ? "Saving..." : "Complete Consultation"}</button>
             </div>
           </div>
         </div>
