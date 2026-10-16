@@ -177,7 +177,11 @@ async function generateUpcomingJobs() {
   const now = new Date()
   const todayKey = getDateKeyInTimeZone(now)
   const horizonKey = addDaysToDateKey(todayKey, JOB_HORIZON_DAYS)
-  const horizonEndUtc = new Date(`${horizonKey}T23:59:59.999Z`)
+  // Build the end boundary from the next Colorado-local midnight so the
+  // complete final local day is included across daylight-saving changes.
+  const horizonEndUtc = new Date(
+    localDateTimeToUtc(addDaysToDateKey(horizonKey, 1), "00:00").getTime() - 1
+  )
 
   const [
     { data: customerServices, error: customerServicesError },
@@ -393,16 +397,63 @@ async function generateUpcomingJobs() {
     }
   }
 
+  // The unique database index is the final guard against concurrent cron
+  // runs. If another run inserts the same job after our initial read, reload
+  // the existing keys and retry only the rows that are still missing.
+  let rowsActuallyInserted = rowsToInsert
   const { error: insertError } = await supabase
     .from("jobs")
-    .insert(rowsToInsert)
+    .insert(rowsActuallyInserted)
 
-  if (insertError) {
+  if (insertError?.code === "23505") {
+    const { data: refreshedJobs, error: refreshError } = await supabase
+      .from("jobs")
+      .select("recurring_schedule_id, scheduled_for")
+      .in("recurring_schedule_id", scheduleIds)
+      .gte("scheduled_for", now.toISOString())
+      .lte("scheduled_for", horizonEndUtc.toISOString())
+
+    if (refreshError) {
+      throw new Error(
+        `A duplicate job was detected, but existing jobs could not be reloaded: ${refreshError.message}`
+      )
+    }
+
+    const refreshedKeys = new Set(
+      ((refreshedJobs || []) as ExistingJob[]).map(
+        (job) =>
+          `${job.recurring_schedule_id}|${new Date(
+            job.scheduled_for
+          ).getTime()}`
+      )
+    )
+
+    rowsActuallyInserted = rowsToInsert.filter(
+      (job) =>
+        !refreshedKeys.has(
+          `${job.recurring_schedule_id}|${new Date(
+            job.scheduled_for
+          ).getTime()}`
+        )
+    )
+
+    if (rowsActuallyInserted.length > 0) {
+      const { error: retryError } = await supabase
+        .from("jobs")
+        .insert(rowsActuallyInserted)
+
+      if (retryError) {
+        throw new Error(
+          `Failed to insert generated jobs after duplicate protection: ${retryError.message}`
+        )
+      }
+    }
+  } else if (insertError) {
     throw new Error(`Failed to insert generated jobs: ${insertError.message}`)
   }
 
   return {
-    generated: rowsToInsert.length,
+    generated: rowsActuallyInserted.length,
     activeSchedules: schedulesToGenerate.length,
     horizon: horizonKey,
   }
