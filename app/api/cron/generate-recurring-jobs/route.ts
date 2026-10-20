@@ -325,16 +325,23 @@ function isValidDateKey(value: string) {
 function isAuthorizedCronRequest(request: Request) {
   const cronSecret = process.env.CRON_SECRET
   const authorization = request.headers.get("authorization")
+  const cronSecretHeader = request.headers.get("x-cron-secret")
 
   if (!cronSecret) {
     console.error("[Cron Auth Diagnostic] CRON_SECRET is missing")
     return false
   }
 
-  if (authorization !== `Bearer ${cronSecret}`) {
-    console.error("[Cron Auth Diagnostic] Authorization mismatch", {
+  // Some proxy/request paths may omit Authorization. Support a dedicated
+  // secret header as an alternative without logging either secret value.
+  const isAuthorized =
+    authorization === `Bearer ${cronSecret}` || cronSecretHeader === cronSecret
+
+  if (!isAuthorized) {
+    console.error("[Cron Auth Diagnostic] Cron authentication mismatch", {
       hasAuthorizationHeader: Boolean(authorization),
       hasBearerPrefix: authorization?.startsWith("Bearer ") ?? false,
+      hasCronSecretHeader: Boolean(cronSecretHeader),
       configuredSecretLength: cronSecret.length,
     })
     return false
