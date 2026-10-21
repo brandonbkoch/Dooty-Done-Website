@@ -264,9 +264,8 @@ export default function AdminDashboard() {
       supabase
         .from("jobs")
         .select("*")
-        .gte("scheduled_for", startOfLocalDay(new Date()).toISOString())
-        .order("scheduled_for", { ascending: true })
-        .limit(100),
+        .order("scheduled_for", { ascending: false })
+        .limit(500),
     ])
 
     if (
@@ -2777,6 +2776,66 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               )}
+            </section>
+
+            <section className="mt-8 rounded-3xl border border-[#0A1821]/10 bg-white p-6 shadow-sm sm:p-8">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="font-extrabold uppercase tracking-[0.15em] text-[#678739]">
+                    Job History
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black">
+                    Past / Completed Jobs
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-[#0A1821]/60">
+                    Review previous service visits and open a job to inspect its details. This history does not initiate or retry payments.
+                  </p>
+                </div>
+                <span className="w-fit rounded-full bg-[#F1F5EA] px-3 py-1.5 text-xs font-black text-[#536f2e]">
+                  {jobs.filter((job) => new Date(job.scheduled_for).getTime() < startOfLocalDay(new Date()).getTime()).length} past jobs
+                </span>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {jobs
+                  .filter((job) => new Date(job.scheduled_for).getTime() < startOfLocalDay(new Date()).getTime())
+                  .sort((a, b) => new Date(b.scheduled_for).getTime() - new Date(a.scheduled_for).getTime())
+                  .slice(0, 100)
+                  .map((job) => {
+                    const customer = getCustomerForJob(job)
+                    const service = getServiceForJob(job)
+
+                    return (
+                      <button
+                        type="button"
+                        key={`past-job-${job.id}`}
+                        onClick={() => handleJobClick(job)}
+                        className="flex w-full flex-col gap-3 rounded-2xl border border-[#0A1821]/10 bg-[#FBFCF9] p-4 text-left transition hover:border-[#678739]/50 hover:bg-[#F1F5EA] sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div>
+                          <p className="font-black">
+                            {customer ? `${customer.first_name} ${customer.last_name}` : "Customer"}
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-[#0A1821]/60">
+                            {service?.name || "Recurring Service"} · {formatJobDateTime(job.scheduled_for)}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${job.status === "completed" ? "bg-[#E5EEDB] text-[#536f2e]" : job.status === "cancelled" ? "bg-red-50 text-red-700" : "bg-[#F1F5EA] text-[#536f2e]"}`}>
+                            {job.status.replaceAll("_", " ")}
+                          </span>
+                          <span className="text-xs font-extrabold text-[#678739]">View details →</span>
+                        </div>
+                      </button>
+                    )
+                  })}
+
+                {jobs.filter((job) => new Date(job.scheduled_for).getTime() < startOfLocalDay(new Date()).getTime()).length === 0 && (
+                  <div className="rounded-2xl bg-[#F1F5EA] p-5 text-sm font-semibold text-[#0A1821]/60">
+                    No past jobs found. Refresh the dashboard if you recently updated job history.
+                  </div>
+                )}
+              </div>
             </section>
 
             <div className="mt-10 grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
