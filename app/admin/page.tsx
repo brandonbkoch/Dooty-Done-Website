@@ -1890,11 +1890,34 @@ export default function AdminDashboard() {
         }
       }
 
+      if (result?.success !== true) {
+        return {
+          success: false,
+          error:
+            result?.error ||
+            "The payment was not confirmed as successfully completed.",
+        }
+      }
+
+      const alreadyPaid = Boolean(result?.alreadyPaid)
+      const freeCleanupApplied = Boolean(result?.freeCleanupApplied)
+      const payment = result?.payment || null
+      const paymentStatus = String(payment?.status || "").toLowerCase()
+
+      if (!alreadyPaid && !freeCleanupApplied && paymentStatus !== "paid") {
+        return {
+          success: false,
+          error:
+            `The payment record has status "${paymentStatus || "unknown"}", not paid. ` +
+            "Review the payment in Square before retrying.",
+        }
+      }
+
       return {
         success: true,
-        alreadyPaid: Boolean(result?.alreadyPaid),
-        freeCleanupApplied: Boolean(result?.freeCleanupApplied),
-        payment: result?.payment || null,
+        alreadyPaid,
+        freeCleanupApplied,
+        payment,
       }
     } catch (error) {
       console.error("Charge completed job unexpected error:", error)
