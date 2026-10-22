@@ -95,6 +95,21 @@ type Job = {
   notes: string | null
 }
 
+type Payment = {
+  id: number
+  customer_id: number | null
+  customer_service_id: number | null
+  job_id: number | null
+  amount: number | string
+  status: string | null
+  payment_method: string | null
+  paid_at: string | null
+  square_payment_id: string | null
+  receipt_url: string | null
+  notes?: string | null
+  created_at?: string | null
+}
+
 export default function AdminDashboard() {
   const router = useRouter()
 
@@ -148,6 +163,9 @@ export default function AdminDashboard() {
   const [scheduleBusy, setScheduleBusy] = useState(false)
 
   const [jobs, setJobs] = useState<Job[]>([])
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [paymentLoadError, setPaymentLoadError] = useState("")
+  const [paymentSearch, setPaymentSearch] = useState("")
   const [calendarDate, setCalendarDate] = useState(new Date())
   const [calendarView, setCalendarView] = useState<"week" | "month">("week")
   const [jobsBusy, setJobsBusy] = useState(false)
@@ -193,6 +211,7 @@ export default function AdminDashboard() {
       { data: customerServiceData, error: customerServiceError },
       { data: recurringScheduleData, error: recurringScheduleError },
       { data: jobData, error: jobError },
+      { data: paymentData, error: paymentError },
     ] = await Promise.all([
       supabase
         .from("customers")
@@ -266,6 +285,12 @@ export default function AdminDashboard() {
         .select("*")
         .order("scheduled_for", { ascending: false })
         .limit(500),
+
+      supabase
+        .from("payments")
+        .select("*")
+        .order("id", { ascending: false })
+        .limit(500),
     ])
 
     if (
@@ -302,6 +327,15 @@ export default function AdminDashboard() {
     setCustomerServices((customerServiceData || []) as CustomerService[])
     setRecurringSchedules((recurringScheduleData || []) as RecurringSchedule[])
     setJobs((jobData || []) as Job[])
+    setPayments((paymentData || []) as Payment[])
+    setPaymentLoadError(
+      paymentError
+        ? "Payment history could not be loaded. Check the payments table permissions and refresh."
+        : ""
+    )
+    if (paymentError) {
+      console.error("Payment history loading error:", paymentError)
+    }
     setLoading(false)
   }
 
@@ -1594,6 +1628,50 @@ export default function AdminDashboard() {
     )
   }
 
+  const getCustomerForPayment = (payment: Payment) => {
+    const customerFromPayment = customers.find(
+      (customer) => customer.id === payment.customer_id
+    )
+    if (customerFromPayment) return customerFromPayment
+
+    const job = jobs.find((candidate) => candidate.id === payment.job_id)
+    return job ? getCustomerForJob(job) : undefined
+  }
+
+  const getJobForPayment = (payment: Payment) =>
+    jobs.find((job) => job.id === payment.job_id) || null
+
+  const formatPaymentAmount = (amount: number | string) => {
+    const numericAmount = Number(amount)
+    return Number.isFinite(numericAmount)
+      ? numericAmount.toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+        })
+      : "Amount unavailable"
+  }
+
+  const filteredPayments = payments.filter((payment) => {
+    const query = paymentSearch.trim().toLowerCase()
+    if (!query) return true
+
+    const customer = getCustomerForPayment(payment)
+    const customerName = customer
+      ? `${customer.first_name} ${customer.last_name}`
+      : ""
+    return [
+      String(payment.id),
+      String(payment.job_id ?? ""),
+      String(payment.customer_id ?? ""),
+      String(payment.customer_service_id ?? ""),
+      customerName,
+      customer?.email || "",
+      payment.status || "",
+      payment.payment_method || "",
+      payment.square_payment_id || "",
+    ].some((value) => value.toLowerCase().includes(query))
+  })
+
   // Prefer the full customers query keyed by customer_id. The nested Supabase
   // relationship can be empty even when the customer record exists.
   const getCustomerForAppointment = (appointment: Appointment) => {
@@ -2836,6 +2914,95 @@ export default function AdminDashboard() {
                   </div>
                 )}
               </div>
+            </section>
+
+            <section className="mt-8 rounded-3xl border border-[#0A1821]/10 bg-white p-6 shadow-sm sm:p-8">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="font-extrabold uppercase tracking-[0.15em] text-[#678739]">
+                    Billing Records
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black">Payment History</h2>
+                  <p className="mt-2 text-sm leading-6 text-[#0A1821]/60">
+                    Search by payment ID, customer, job ID, status, payment method, or Square payment ID. This is read-only and never charges or retries a payment.
+                  </p>
+                </div>
+                <span className="w-fit rounded-full bg-[#F1F5EA] px-3 py-1.5 text-xs font-black text-[#536f2e]">
+                  {filteredPayments.length} records shown
+                </span>
+              </div>
+
+              <label className="mt-5 block">
+                <span className="mb-2 block text-sm font-black">Search payment records</span>
+                <input
+                  type="search"
+                  value={paymentSearch}
+                  onChange={(event) => setPaymentSearch(event.target.value)}
+                  placeholder="Try payment ID 18 or a customer name"
+                  className="w-full rounded-2xl border border-[#0A1821]/15 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#678739]"
+                />
+              </label>
+
+              {paymentLoadError ? (
+                <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+                  {paymentLoadError}
+                </div>
+              ) : (
+                <div className="mt-5 space-y-3">
+                  {filteredPayments.slice(0, 100).map((payment) => {
+                    const customer = getCustomerForPayment(payment)
+                    const job = getJobForPayment(payment)
+                    const paymentDate = payment.paid_at || payment.created_at || job?.scheduled_for || null
+                    const normalizedStatus = String(payment.status || "unknown").toLowerCase()
+                    return (
+                      <div key={`payment-${payment.id}`} className="rounded-2xl border border-[#0A1821]/10 bg-[#FBFCF9] p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="font-black">Payment #{payment.id} · {formatPaymentAmount(payment.amount)}</p>
+                            <p className="mt-1 text-sm font-semibold text-[#0A1821]/70">
+                              {customer ? `${customer.first_name} ${customer.last_name}` : `Customer ID ${payment.customer_id ?? "unknown"}`}
+                            </p>
+                            <p className="mt-1 text-xs text-[#0A1821]/60">
+                              Job ID: {payment.job_id ?? "Not linked"} · Customer ID: {payment.customer_id ?? "unknown"}
+                            </p>
+                            <p className="mt-1 text-xs text-[#0A1821]/60">
+                              {paymentDate ? formatDateTime(paymentDate) : "Date unavailable"} · Method: {(payment.payment_method || "unknown").replaceAll("_", " ")}
+                            </p>
+                            {payment.square_payment_id && (
+                              <p className="mt-1 break-all text-xs text-[#0A1821]/60">Square payment ID: {payment.square_payment_id}</p>
+                            )}
+                          </div>
+                          <span className={`w-fit rounded-full px-3 py-1 text-xs font-black uppercase ${normalizedStatus === "paid" ? "bg-[#E5EEDB] text-[#536f2e]" : normalizedStatus === "failed" || normalizedStatus === "cancelled" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800"}`}>
+                            {normalizedStatus.replaceAll("_", " ")}
+                          </span>
+                        </div>
+                        {job && (
+                          <button
+                            type="button"
+                            onClick={() => handleJobClick(job)}
+                            className="mt-3 text-xs font-extrabold text-[#678739] underline underline-offset-2"
+                          >
+                            Open linked job #{job.id}
+                          </button>
+                        )}
+                        {payment.receipt_url && (
+                          <a href={payment.receipt_url} target="_blank" rel="noreferrer" className="ml-4 mt-3 inline-block text-xs font-extrabold text-[#678739] underline underline-offset-2">
+                            Open receipt
+                          </a>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {filteredPayments.length === 0 && (
+                    <div className="rounded-2xl bg-[#F1F5EA] p-5 text-sm font-semibold text-[#0A1821]/60">
+                      No payment records match this search.
+                    </div>
+                  )}
+                  {filteredPayments.length > 100 && (
+                    <p className="text-xs font-semibold text-[#0A1821]/55">Showing the first 100 matches. Refine your search to narrow the results.</p>
+                  )}
+                </div>
+              )}
             </section>
 
             <div className="mt-10 grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
@@ -4162,6 +4329,66 @@ export default function AdminDashboard() {
                   )}
                 </div>
               )}
+
+              {(() => {
+                const paymentsForJob = payments.filter(
+                  (payment) => payment.job_id === selectedJob.id
+                )
+                const servicePaymentsNotAssignedToJob = payments.filter(
+                  (payment) =>
+                    payment.job_id == null &&
+                    payment.customer_service_id === selectedJob.customer_service_id
+                )
+
+                const renderPayment = (payment: Payment) => (
+                  <div key={`job-payment-${payment.id}`} className="rounded-xl bg-[#F1F5EA] p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-black">Payment #{payment.id}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-black uppercase ${String(payment.status || "unknown").toLowerCase() === "paid" ? "bg-[#E5EEDB] text-[#536f2e]" : "bg-amber-50 text-amber-800"}`}>
+                        {String(payment.status || "unknown").replaceAll("_", " ")}
+                      </span>
+                    </div>
+                    <p className="mt-2 font-bold">{formatPaymentAmount(payment.amount)}</p>
+                    <p className="mt-1 text-xs text-[#0A1821]/65">Method: {(payment.payment_method || "unknown").replaceAll("_", " ")}</p>
+                    <p className="mt-1 text-xs text-[#0A1821]/65">Customer ID: {payment.customer_id ?? "unknown"} · Customer service ID: {payment.customer_service_id ?? "unknown"}</p>
+                    <p className="mt-1 break-all text-xs text-[#0A1821]/65">Square payment ID: {payment.square_payment_id || "Not recorded"}</p>
+                    {payment.receipt_url && (
+                      <a href={payment.receipt_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs font-extrabold text-[#678739] underline underline-offset-2">Open receipt</a>
+                    )}
+                  </div>
+                )
+
+                return (
+                  <div className="rounded-2xl border border-[#0A1821]/10 bg-white p-4">
+                    <p className="text-sm font-black">Payment Records</p>
+                    {paymentsForJob.length > 0 ? (
+                      <div className="mt-3 space-y-3">
+                        <p className="text-xs font-extrabold uppercase tracking-wide text-[#536f2e]">Linked to this job</p>
+                        {paymentsForJob.map(renderPayment)}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-[#0A1821]/60">
+                        No payment record is directly linked to this job.
+                      </p>
+                    )}
+                    {servicePaymentsNotAssignedToJob.length > 0 && (
+                      <div className="mt-4 space-y-3 border-t border-[#0A1821]/10 pt-4">
+                        <p className="text-xs font-extrabold uppercase tracking-wide text-[#536f2e]">Payments for this customer service, not assigned to this specific job</p>
+                        <p className="text-xs leading-5 text-[#0A1821]/60">
+                          These records share the customer service ID but are not linked to this individual job. Review the payment ID and Square record before drawing conclusions about this visit.
+                        </p>
+                        {servicePaymentsNotAssignedToJob.map(renderPayment)}
+                      </div>
+                    )}
+                    {paymentsForJob.length === 0 && servicePaymentsNotAssignedToJob.length === 0 && (
+                      <p className="mt-2 text-sm leading-6 text-[#0A1821]/60">
+                        No payment records linked to this job or its customer service were found in the loaded payment history. This does not prove that no Square payment occurred; check Payment History and Square before taking any payment action.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
+
 
               {selectedJob.status === "cancelled" && (
                 <div className="rounded-2xl bg-red-50 p-4 text-sm font-semibold text-red-700">
