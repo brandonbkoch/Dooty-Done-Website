@@ -92,17 +92,17 @@ type SquareWebhookEvent = {
   };
 };
 
+type LocalRefundStatus = "pending" | "completed" | "failed";
+
 function mapRefundStatus(
   squareStatus: string | undefined
-): "pending" | "completed" | "failed" {
+): LocalRefundStatus {
   switch ((squareStatus || "").toUpperCase()) {
     case "COMPLETED":
       return "completed";
-
     case "FAILED":
     case "REJECTED":
       return "failed";
-
     case "PENDING":
     case "APPROVED":
     default:
@@ -112,6 +112,7 @@ function mapRefundStatus(
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Verify server configuration.
     if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
       console.error(
         "Missing Supabase server environment variables."
@@ -149,6 +150,7 @@ export async function POST(request: NextRequest) {
       }
     );
 
+    // 2. Read the raw body and verify Square's signature.
     const rawBody = await request.text();
 
     if (!rawBody) {
@@ -177,10 +179,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 3. Parse the verified event.
     let event: SquareWebhookEvent;
 
     try {
-      event = JSON.parse(rawBody);
+      event = JSON.parse(rawBody) as SquareWebhookEvent;
     } catch {
       return jsonError("Invalid webhook JSON.");
     }
@@ -192,7 +195,7 @@ export async function POST(request: NextRequest) {
     );
 
     // ---------------------------------------------------------
-    // REFUND EVENTS
+    // 4. REFUND EVENTS
     // ---------------------------------------------------------
 
     if (
@@ -207,7 +210,7 @@ export async function POST(request: NextRequest) {
         refund.amount_money?.amount == null
       ) {
         console.error(
-          "Refund webhook is missing required refund fields."
+          "Refund webhook is missing required fields."
         );
 
         return jsonError(
@@ -232,7 +235,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Find the original payment recorded by Dooty Done.
+      // Find the original Dooty Done payment.
       const {
         data: originalPayment,
         error: originalPaymentError,
@@ -256,8 +259,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Return a retryable error if payment and refund events
-      // arrive out of order. Do not create an orphan refund.
+      // Square events can arrive out of order. Ask Square to
+      // retry if the original payment has not been recorded yet.
       if (!originalPayment) {
         console.error(
           "Refund arrived before its Dooty Done payment record:",
@@ -270,24 +273,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const localRefundStatus = mapRefundStatus(
+      const incomingRefundStatus = mapRefundStatus(
         refund.status
       );
 
-      const refundTimestamp =
-        refund.updated_at ||
-        refund.created_at ||
-        new Date().toISOString();
-
-      // Look for an existing local refund by its stable
-      // Square refund ID. Preserve its original idempotency key.
+      // Find an existing refund using Square's stable refund ID.
       const {
         data: existingRefund,
         error: existingRefundError,
       } = await supabaseAdmin
         .from("refunds")
         .select(
-          "id, payment_id, square_idempotency_key"
+          "id, payment_id, square_idempotency_key, status, processed_at"
         )
         .eq("square_refund_id", refund.id)
         .maybeSingle();
@@ -309,7 +306,7 @@ export async function POST(request: NextRequest) {
         existingRefund.payment_id !== originalPayment.id
       ) {
         console.error(
-          "Square refund ID is already linked to another payment:",
+          "Square refund ID is linked to another payment:",
           refund.id
         );
 
@@ -318,6 +315,18 @@ export async function POST(request: NextRequest) {
           500
         );
       }
+
+      // Never downgrade a completed refund due to an older,
+      // delayed pending or failed event.
+      const localRefundStatus: LocalRefundStatus =
+        existingRefund?.status === "completed"
+          ? "completed"
+          : incomingRefundStatus;
+
+      const refundTimestamp =
+        refund.updated_at ||
+        refund.created_at ||
+        new Date().toISOString();
 
       const refundValues = {
         payment_id: originalPayment.id,
@@ -330,7 +339,7 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
         processed_at:
           localRefundStatus === "completed"
-            ? refundTimestamp
+            ? existingRefund?.processed_at || refundTimestamp
             : null,
       };
 
@@ -353,8 +362,8 @@ export async function POST(request: NextRequest) {
           );
         }
       } else {
-        // Stable local key for refunds initiated outside
-        // Dooty Done. This does not issue a Square request.
+        // Record refunds made through Square directly.
+        // This does not send a refund request to Square.
         const { error: refundInsertError } =
           await supabaseAdmin
             .from("refunds")
@@ -373,8 +382,6 @@ export async function POST(request: NextRequest) {
             refundInsertError
           );
 
-          // Square can retry the event. On retry, the
-          // existing Square refund ID will be checked again.
           return jsonError(
             "Could not save the refund record.",
             500
@@ -382,7 +389,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Recalculate payment status from all completed refunds.
+      // Recalculate the payment status from completed refunds.
       const {
         data: refundRows,
         error: refundRowsError,
@@ -417,9 +424,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const completedRefundCents = (
-        refundRows || []
-      )
+      const completedRefundCents = (refundRows || [])
         .filter((row) => row.status === "completed")
         .reduce(
           (total, row) =>
@@ -440,8 +445,7 @@ export async function POST(request: NextRequest) {
         calculatedPaymentStatus = "paid";
       }
 
-      // Only adjust known payment/refund statuses. Do not
-      // overwrite unrelated payment states.
+      // Do not overwrite unrelated payment states.
       if (
         ["paid", "partially_refunded", "refunded"].includes(
           originalPayment.status
@@ -483,7 +487,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // PAYMENT EVENTS
+    // 5. PAYMENT EVENTS
     // ---------------------------------------------------------
 
     if (
@@ -509,7 +513,12 @@ export async function POST(request: NextRequest) {
 
     const squarePaymentId = payment.id;
 
+    // Only record completed Square payments.
     if (payment.status !== "COMPLETED") {
+      console.log(
+        `Square payment ${squarePaymentId} is ${payment.status}; waiting for completion.`
+      );
+
       return NextResponse.json({
         success: true,
         ignored: true,
@@ -517,8 +526,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Do not overwrite any existing payment record. This is
-    // especially important for refunded payment statuses.
+    // Prevent duplicate records and never overwrite a payment
+    // that already exists, including refunded payments.
     const {
       data: existingPayment,
       error: existingPaymentError,
@@ -552,12 +561,17 @@ export async function POST(request: NextRequest) {
     const squareOrderId = payment.order_id || null;
 
     if (!squareOrderId) {
+      console.error(
+        `Payment ${squarePaymentId} has no Square order ID.`
+      );
+
       return jsonError(
         "Completed Square payment has no order ID.",
         400
       );
     }
 
+    // Match the Square order to a Dooty Done payment link.
     const {
       data: paymentLink,
       error: paymentLinkError,
@@ -582,6 +596,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!paymentLink) {
+      console.error(
+        `No Dooty Done payment link found for Square order ${squareOrderId}.`
+      );
+
       return jsonError(
         "No matching Dooty Done payment link found.",
         404
@@ -618,6 +636,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Record the completed payment.
     const {
       data: insertedPayment,
       error: insertError,
@@ -656,6 +675,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Mark the corresponding payment link as paid.
     const { error: updateLinkError } =
       await supabaseAdmin
         .from("payment_links")
