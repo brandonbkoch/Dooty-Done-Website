@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
@@ -279,12 +278,12 @@ export async function POST(request: NextRequest) {
 
       // Find an existing refund using Square's stable refund ID.
       const {
-        data: existingRefund,
+        data: squareIdRefund,
         error: existingRefundError,
       } = await supabaseAdmin
         .from("refunds")
         .select(
-          "id, payment_id, square_idempotency_key, status, processed_at"
+          "id, payment_id, amount, square_idempotency_key, status, processed_at"
         )
         .eq("square_refund_id", refund.id)
         .maybeSingle();
@@ -299,6 +298,75 @@ export async function POST(request: NextRequest) {
           "Could not check the existing refund record.",
           500
         );
+      }
+
+      // The endpoint creates a pending local row before calling Square.
+      // Square's webhook can arrive before the endpoint saves Square's ID,
+      // so safely reconcile that pending row when payment and amount match.
+      let existingRefund = squareIdRefund;
+
+      if (!existingRefund) {
+        const {
+          data: pendingRefund,
+          error: pendingRefundError,
+        } = await supabaseAdmin
+          .from("refunds")
+          .select(
+            "id, payment_id, amount, square_idempotency_key, status, processed_at, square_refund_id"
+          )
+          .eq("payment_id", originalPayment.id)
+          .eq("status", "pending")
+          .maybeSingle();
+
+        if (pendingRefundError) {
+          console.error(
+            "Pending refund reconciliation lookup failed:",
+            pendingRefundError
+          );
+
+          return jsonError(
+            "Could not check a pending refund for reconciliation.",
+            500
+          );
+        }
+
+        if (pendingRefund) {
+          const pendingAmountCents = Math.round(
+            Number(pendingRefund.amount) * 100
+          );
+
+          // Never associate a Square refund with a local pending record
+          // unless the amount matches exactly and it has no other Square ID.
+          if (
+            pendingRefund.square_refund_id &&
+            pendingRefund.square_refund_id !== refund.id
+          ) {
+            console.error(
+              "Pending refund already has a different Square refund ID:",
+              pendingRefund.id
+            );
+
+            return jsonError(
+              "A pending refund is linked to a different Square refund. Manual reconciliation is required.",
+              500
+            );
+          }
+
+          if (pendingAmountCents !== refundAmountCents) {
+            console.error(
+              "Square refund amount does not match the pending local refund:",
+              refund.id,
+              pendingRefund.id
+            );
+
+            return jsonError(
+              "Square refund does not match the pending local refund amount. Manual reconciliation is required.",
+              500
+            );
+          }
+
+          existingRefund = pendingRefund;
+        }
       }
 
       if (
