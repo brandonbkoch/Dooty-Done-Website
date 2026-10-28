@@ -1016,35 +1016,8 @@ export default function AdminDashboard() {
       return
     }
 
-    // If the customer chooses to use the free cleanup today, only consume the
-    // benefit now when the consultation appointment actually included cleanup.
-    // Otherwise, the payment route can apply the benefit to the first future job.
-    let consultationCleanupAppointmentId: number | null = null
-    let consultationCleanupDate: string | null = null
-
-    if (recurringFreeCleanupChoice === "today" && acceptedQuote.appointment_id) {
-      const { data: consultationAppointment, error: consultationLookupError } =
-        await supabase
-          .from("appointments")
-          .select("id, scheduled_at, cleanup_completed")
-          .eq("id", acceptedQuote.appointment_id)
-          .maybeSingle()
-
-      if (consultationLookupError) {
-        console.error("Check consultation cleanup error:", consultationLookupError)
-        setErrorMessage(
-          "The recurring service was not updated because we couldn't verify whether cleanup happened during the consultation. Please try again."
-        )
-        setRecurringBusy(false)
-        return
-      }
-
-      if (consultationAppointment?.cleanup_completed) {
-        consultationCleanupAppointmentId = consultationAppointment.id
-        consultationCleanupDate = String(consultationAppointment.scheduled_at).slice(0, 10)
-      }
-    }
-
+    // The free initial cleanup is reserved for the first eligible scheduled
+    // service job. Consultation appointments never consume this benefit.
     const customerUpdate = await supabase
       .from("customers")
       .update({
@@ -1053,12 +1026,6 @@ export default function AdminDashboard() {
         status: "active",
         customer_since: recurringStartDate,
         free_cleanup_choice: recurringFreeCleanupChoice,
-        ...(consultationCleanupAppointmentId === null
-          ? {}
-          : {
-              free_initial_cleanup_used: true,
-              free_initial_cleanup_date: consultationCleanupDate,
-            }),
       })
       .eq("id", selectedCustomer.id)
 
@@ -1070,19 +1037,6 @@ export default function AdminDashboard() {
       setRecurringBusy(false)
       await loadDashboard()
       return
-    }
-
-    if (consultationCleanupAppointmentId !== null) {
-      const { error: markFreeCleanupError } = await supabase
-        .from("appointments")
-        .update({ free_cleanup_applied: true })
-        .eq("id", consultationCleanupAppointmentId)
-
-      if (markFreeCleanupError) {
-        // The customer benefit is already marked used to prevent a duplicate
-        // free cleanup; report the history-field issue without re-opening it.
-        console.error("Mark consultation free cleanup error:", markFreeCleanupError)
-      }
     }
 
     const { data: existingSchedules, error: scheduleLookupError } =
@@ -3752,7 +3706,7 @@ export default function AdminDashboard() {
                         disabled={recurringBusy}
                         className="sr-only"
                       />
-                      <div className="font-black text-[#0A1821]">Today</div>
+                      <div className="font-black text-[#0A1821]">First scheduled visit</div>
                       <div className="mt-1 text-sm leading-5 text-[#0A1821]/60">
                         Apply the free cleanup to the first applicable job.
                       </div>

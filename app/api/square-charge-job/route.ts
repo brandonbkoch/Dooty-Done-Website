@@ -217,89 +217,98 @@ export async function POST(request: Request) {
       )
     }
     // ------------------------------------------------------------
-    // FIRST CLEANUP FREE
+    // FIRST CLEANUP FREE — atomic database transaction
     // ------------------------------------------------------------
-    // Apply the free cleanup only when it has not already been used and the
-    // customer has not chosen to save it for later or decline it.
-    // A null choice preserves the previous behavior for older customer records
-    // created before the Today / Later / Declined option existed.
-    const freeCleanupChoice = customer.free_cleanup_choice ?? null
-    const freeCleanupIsAllowed =
-      freeCleanupChoice === "today" ||
-      (freeCleanupChoice === null && customer.free_initial_cleanup_used === false)
-    if (
-      customer.free_initial_cleanup_used === false &&
-      freeCleanupIsAllowed
-    ) {
-      const freeCleanupDate = new Date().toISOString().slice(0, 10)
-      const { data: claimedCustomer, error: claimError } = await supabase
-        .from("customers")
-        .update({
-          free_initial_cleanup_used: true,
-          free_initial_cleanup_date: freeCleanupDate,
-        })
-        .eq("id", customer.id)
-        .eq("free_initial_cleanup_used", false)
-        .select("id")
-        .maybeSingle()
-      if (claimError) {
-        console.error("Free cleanup claim error:", claimError)
-        return NextResponse.json(
-          {
-            error:
-              "We couldn't confirm the free first cleanup status, so no payment was processed.",
-          },
-          { status: 500 }
-        )
-      }
-      if (claimedCustomer) {
-        const { data: freePayment, error: freePaymentError } =
-          await supabase
-            .from("payments")
-            .insert({
-              customer_id: customer.id,
-              customer_service_id: customerService.id,
-              job_id: job.id,
-              amount: 0,
-              status: "paid",
-              payment_method: "free_initial_cleanup",
-              paid_at: new Date().toISOString(),
-              notes: "First cleanup free for new recurring customer.",
-            })
-            .select(
-              "id, job_id, amount, status, payment_method, paid_at, square_payment_id, receipt_url"
-            )
-            .maybeSingle()
-        if (freePaymentError) {
-          console.error(
-            "Free cleanup payment record error:",
-            freePaymentError
-          )
-          return NextResponse.json(
-            {
-              error:
-                "The free cleanup was applied, but we couldn't save its payment record.",
-            },
-            { status: 500 }
-          )
-        }
+    // The database function locks the customer row and atomically inserts
+    // the zero-dollar payment while marking the offer used. Both "today"
+    // and "later" mean the offer is available for the first eligible
+    // completed recurring-service job. A declined offer is never applied.
+    const { data: freeCleanupResult, error: freeCleanupRpcError } =
+      await supabase.rpc("apply_free_initial_cleanup_for_job", {
+        p_job_id: job.id,
+        p_customer_id: customer.id,
+        p_customer_service_id: customerService.id,
+      })
+
+    if (freeCleanupRpcError) {
+      console.error("Atomic free cleanup processing error:", freeCleanupRpcError)
+      return NextResponse.json(
+        {
+          error:
+            "We couldn't safely confirm the free initial cleanup status. No new payment was processed.",
+        },
+        { status: 500 }
+      )
+    }
+
+    const freeCleanupStatus = freeCleanupResult?.status
+
+    if (freeCleanupStatus === "applied") {
+      const freePayment = freeCleanupResult.payment
+      return NextResponse.json({
+        success: true,
+        alreadyPaid: false,
+        freeCleanupApplied: true,
+        payment: {
+          id: freePayment?.id ?? null,
+          jobId: job.id,
+          amount: 0,
+          status: "paid",
+          squarePaymentId: null,
+          receiptUrl: null,
+          cardBrand: null,
+          last4: null,
+        },
+      })
+    }
+
+    if (freeCleanupStatus === "existing_payment") {
+      const existing = freeCleanupResult.payment
+      const existingStatus = String(existing?.status || "").toLowerCase()
+
+      if (existingStatus === "paid") {
         return NextResponse.json({
           success: true,
-          alreadyPaid: false,
-          freeCleanupApplied: true,
+          alreadyPaid: true,
+          freeCleanupApplied:
+            existing?.payment_method === "free_initial_cleanup",
           payment: {
-            id: freePayment?.id ?? null,
-            jobId: job.id,
-            amount: 0,
-            status: "paid",
-            squarePaymentId: null,
-            receiptUrl: null,
+            id: existing?.id ?? null,
+            jobId: existing?.job_id ?? job.id,
+            amount: Number(existing?.amount ?? 0),
+            status: existingStatus,
+            squarePaymentId: existing?.square_payment_id ?? null,
+            receiptUrl: existing?.receipt_url ?? null,
             cardBrand: null,
             last4: null,
           },
         })
       }
+
+      return NextResponse.json(
+        {
+          success: false,
+          alreadyPaid: false,
+          freeCleanupApplied: false,
+          error:
+            `A payment record already exists for this job with status "${existingStatus || "unknown"}". ` +
+            "No new charge was attempted. Review this payment in Square before retrying.",
+        },
+        { status: 409 }
+      )
     }
+
+    if (freeCleanupStatus !== "not_eligible") {
+      console.error("Unexpected free cleanup RPC result:", freeCleanupResult)
+      return NextResponse.json(
+        {
+          error:
+            "We couldn't safely confirm the free initial cleanup status. No new payment was processed.",
+        },
+        { status: 500 }
+      )
+    }
+
     // ------------------------------------------------------------
     // Load active Square card on file
     // ------------------------------------------------------------
