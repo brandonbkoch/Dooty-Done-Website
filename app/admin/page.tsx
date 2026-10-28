@@ -1884,6 +1884,10 @@ export default function AdminDashboard() {
   }
 
   const chargeCompletedJob = async (jobId: number) => {
+    // If the request fails after it begins, Square may have processed
+    // the payment even if the browser never receives its response.
+    let chargeRequestStarted = false
+
     try {
       const { data: sessionData, error: sessionError } =
         await supabase.auth.getSession()
@@ -1893,9 +1897,12 @@ export default function AdminDashboard() {
 
         return {
           success: false,
-          error: "Your admin session could not be verified.",
+          error:
+            "Your admin session could not be verified. No payment request was sent.",
         }
       }
+
+      chargeRequestStarted = true
 
       const response = await fetch("/api/square-charge-job", {
         method: "POST",
@@ -1903,12 +1910,23 @@ export default function AdminDashboard() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${sessionData.session.access_token}`,
         },
-        body: JSON.stringify({
-          jobId,
-        }),
+        body: JSON.stringify({ jobId }),
       })
 
       const result = await response.json().catch(() => null)
+
+      // Square can succeed even if saving the payment record fails.
+      // Make this an explicit reconciliation warning, never a normal retry.
+      if (result?.paymentProcessed === true) {
+        return {
+          success: false,
+          error:
+            "IMPORTANT: Square processed this payment, but Dooty Done could not confirm that the payment record was saved. DO NOT retry this charge yet. Check Square for the payment first." +
+            (result?.squarePaymentId
+              ? ` Square payment ID: ${result.squarePaymentId}.`
+              : ""),
+        }
+      }
 
       if (!response.ok) {
         console.error("Charge completed job error:", result)
@@ -1917,7 +1935,7 @@ export default function AdminDashboard() {
           success: false,
           error:
             result?.error ||
-            "The payment could not be processed.",
+            "The payment request failed. If you are unsure whether Square processed it, verify Square before retrying.",
         }
       }
 
@@ -1926,7 +1944,7 @@ export default function AdminDashboard() {
           success: false,
           error:
             result?.error ||
-            "The payment was not confirmed as successfully completed.",
+            "The payment was not confirmed as successfully completed. Review Square before retrying.",
         }
       }
 
@@ -1955,10 +1973,11 @@ export default function AdminDashboard() {
 
       return {
         success: false,
-        error:
-          error instanceof Error
+        error: chargeRequestStarted
+          ? "The payment request may have reached Square, but its outcome could not be confirmed. DO NOT retry yet. Check Square for this job's payment first."
+          : error instanceof Error
             ? error.message
-            : "Something went wrong processing the payment.",
+            : "Something went wrong verifying the admin session.",
       }
     }
   }
