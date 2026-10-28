@@ -1413,11 +1413,94 @@ export default function AdminDashboard() {
     })
   }
 
-  const buildLocalDateTime = (date: Date, timeString: string) => {
-    const result = new Date(date)
+  // Keep manual job generation aligned with the automatic cron route's
+  // America/Denver date keys and local-time-to-UTC conversion.
+  const getColoradoZonedParts = (date: Date) => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Denver",
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(date)
+
+    const values: Record<string, string> = {}
+    for (const part of parts) {
+      if (part.type !== "literal") values[part.type] = part.value
+    }
+
+    return {
+      year: Number(values.year),
+      month: Number(values.month),
+      day: Number(values.day),
+      hour: Number(values.hour),
+      minute: Number(values.minute),
+      second: Number(values.second),
+    }
+  }
+
+  const getColoradoDateKey = (date: Date) => {
+    const parts = getColoradoZonedParts(date)
+    return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(
+      parts.day
+    ).padStart(2, "0")}`
+  }
+
+  const parseDateKey = (dateKey: string) => {
+    const [year, month, day] = dateKey.split("-").map(Number)
+    return { year, month, day }
+  }
+
+  const dateKeyToUtcDate = (dateKey: string) => {
+    const { year, month, day } = parseDateKey(dateKey)
+    return new Date(Date.UTC(year, month - 1, day))
+  }
+
+  const utcDateToDateKey = (date: Date) =>
+    `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(date.getUTCDate()).padStart(2, "0")}`
+
+  const addDaysToDateKey = (dateKey: string, days: number) => {
+    const date = dateKeyToUtcDate(dateKey)
+    date.setUTCDate(date.getUTCDate() + days)
+    return utcDateToDateKey(date)
+  }
+
+  const getDayOfWeekForDateKey = (dateKey: string) =>
+    dateKeyToUtcDate(dateKey).getUTCDay()
+
+  const getColoradoOffsetMinutes = (utcDate: Date) => {
+    const parts = getColoradoZonedParts(utcDate)
+    const asIfUtc = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second
+    )
+    return Math.round((asIfUtc - utcDate.getTime()) / 60_000)
+  }
+
+  const coloradoDateTimeToUtc = (dateKey: string, timeString: string) => {
+    const { year, month, day } = parseDateKey(dateKey)
     const [hours, minutes] = timeString.slice(0, 5).split(":").map(Number)
-    result.setHours(hours, minutes, 0, 0)
-    return result
+    const guess = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0, 0))
+
+    const firstOffset = getColoradoOffsetMinutes(guess)
+    let utcDate = new Date(guess.getTime() - firstOffset * 60_000)
+    const secondOffset = getColoradoOffsetMinutes(utcDate)
+
+    if (secondOffset !== firstOffset) {
+      utcDate = new Date(guess.getTime() - secondOffset * 60_000)
+    }
+
+    return utcDate
   }
 
   const handleGenerateUpcomingJobs = async () => {
@@ -1444,16 +1527,18 @@ export default function AdminDashboard() {
         return
       }
 
-      const horizon = new Date()
-      horizon.setDate(horizon.getDate() + 42)
+      const now = new Date()
+      const todayKey = getColoradoDateKey(now)
+      const horizonKey = addDaysToDateKey(todayKey, 42)
+      const horizonEndUtc = new Date(`${horizonKey}T23:59:59.999Z`)
 
       const scheduleIds = schedulesToGenerate.map((schedule) => schedule.id)
       const { data: existingJobData, error: existingJobError } = await supabase
         .from("jobs")
         .select("id, recurring_schedule_id, scheduled_for")
         .in("recurring_schedule_id", scheduleIds)
-        .gte("scheduled_for", startOfLocalDay(new Date()).toISOString())
-        .lte("scheduled_for", horizon.toISOString())
+        .gte("scheduled_for", now.toISOString())
+        .lte("scheduled_for", horizonEndUtc.toISOString())
 
       if (existingJobError) {
         console.error("Load existing jobs error:", existingJobError)
@@ -1486,22 +1571,79 @@ export default function AdminDashboard() {
         )
         if (!service) continue
 
-        const startDate = startOfLocalDay(
-          new Date(`${customerService.start_date}T12:00:00`)
-        )
-        const today = startOfLocalDay(new Date())
-        const generationStart = startDate > today ? startDate : today
+        const startDateKey = customerService.start_date?.slice(0, 10)
+        if (!startDateKey || !/^\d{4}-\d{2}-\d{2}$/.test(startDateKey)) {
+          console.warn(
+            `Skipping recurring schedule ${schedule.id}: invalid service start date.`
+          )
+          continue
+        }
+
+        const scheduleDay = Number(schedule.day_of_week)
+        if (
+          !Number.isInteger(scheduleDay) ||
+          scheduleDay < 0 ||
+          scheduleDay > 6 ||
+          !schedule.service_time
+        ) {
+          console.warn(
+            `Skipping recurring schedule ${schedule.id}: invalid day or service time.`
+          )
+          continue
+        }
 
         const frequency = service.frequency
-        const cursor = new Date(generationStart)
 
         if (frequency === "weekly" || frequency === "twice-weekly") {
-          while (cursor <= horizon) {
-            if (cursor.getDay() === schedule.day_of_week) {
-              const scheduledDateTime = buildLocalDateTime(
+          let cursor = todayKey
+
+          while (cursor <= horizonKey) {
+            if (
+              cursor >= startDateKey &&
+              getDayOfWeekForDateKey(cursor) === scheduleDay
+            ) {
+              const scheduledDateTime = coloradoDateTimeToUtc(
                 cursor,
                 schedule.service_time
               )
+
+              if (scheduledDateTime >= now && scheduledDateTime <= horizonEndUtc) {
+                const key = `${schedule.id}|${scheduledDateTime.getTime()}`
+
+                if (!existingKeys.has(key)) {
+                  rowsToInsert.push({
+                    customer_service_id: schedule.customer_service_id,
+                    recurring_schedule_id: schedule.id,
+                    scheduled_for: scheduledDateTime.toISOString(),
+                    status: "scheduled",
+                  })
+                  existingKeys.add(key)
+                }
+              }
+            }
+
+            cursor = addDaysToDateKey(cursor, 1)
+          }
+
+          continue
+        }
+
+        if (frequency === "biweekly") {
+          const startDay = getDayOfWeekForDateKey(startDateKey)
+          const offset = (scheduleDay - startDay + 7) % 7
+          let cursor = addDaysToDateKey(startDateKey, offset)
+
+          while (cursor < todayKey) {
+            cursor = addDaysToDateKey(cursor, 14)
+          }
+
+          while (cursor <= horizonKey) {
+            const scheduledDateTime = coloradoDateTimeToUtc(
+              cursor,
+              schedule.service_time
+            )
+
+            if (scheduledDateTime >= now && scheduledDateTime <= horizonEndUtc) {
               const key = `${schedule.id}|${scheduledDateTime.getTime()}`
 
               if (!existingKeys.has(key)) {
@@ -1515,31 +1657,7 @@ export default function AdminDashboard() {
               }
             }
 
-            cursor.setDate(cursor.getDate() + 1)
-          }
-        } else if (frequency === "biweekly") {
-          while (cursor <= horizon && cursor.getDay() !== schedule.day_of_week) {
-            cursor.setDate(cursor.getDate() + 1)
-          }
-
-          while (cursor <= horizon) {
-            const scheduledDateTime = buildLocalDateTime(
-              cursor,
-              schedule.service_time
-            )
-            const key = `${schedule.id}|${scheduledDateTime.getTime()}`
-
-            if (!existingKeys.has(key)) {
-              rowsToInsert.push({
-                customer_service_id: schedule.customer_service_id,
-                recurring_schedule_id: schedule.id,
-                scheduled_for: scheduledDateTime.toISOString(),
-                status: "scheduled",
-              })
-              existingKeys.add(key)
-            }
-
-            cursor.setDate(cursor.getDate() + 14)
+            cursor = addDaysToDateKey(cursor, 14)
           }
         }
       }
