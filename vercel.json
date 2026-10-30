@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/generate-recurring-jobs",
-      "schedule": "0 9 * * *"
+      "schedule": "0 16 * * *"
     }
   ]
 }
